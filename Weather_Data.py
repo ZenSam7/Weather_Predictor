@@ -27,8 +27,9 @@ def get_moscow_data():
                 data = string.split(";")[:-2]
 
                 # Если попался брак, то пропускаем шаг
-                if '' in data or len(data) != 5:
+                if '' in data or len(data) != 7:
                     continue
+
                 processed_data = [0 for _ in range(7)]
 
                 # Преобразуем строку
@@ -82,6 +83,9 @@ def get_plank_history():
         for string in file.readlines():
             data = string.split(",")
 
+            # Если попался брак, то пропускаем шаг
+            if '' in data or len(data) != 15: continue
+
             processed_data = [0 for _ in range(7)]
 
             processed_data[0] = int(data[0][11:13]) + int(data[0][14:16]) /60
@@ -127,6 +131,9 @@ def get_weather_history():
     with open("Datasets/weatherHistory.txt") as file:
         for string in file.readlines():
             data = string.split(",")
+
+            # Если попался брак, то пропускаем шаг
+            if '' in data or len(data) != 12: continue
 
             processed_data = [0 for _ in range(7)]
 
