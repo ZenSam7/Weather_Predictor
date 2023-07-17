@@ -219,13 +219,15 @@ def print_ai_answers(ai, real_data, batch_size):
     print("Time\t\t\tReal Data\t\t\t\t\tAI answer\t\t\t\t\tAI answer on AI\t\t\t\tErrors ∆")
 
     total_errors = []
-    for _ in range(batch_size):
+
+    rand = np.random.randint(len(real_data) -batch_size)
+    real_matrix = np.reshape(np.array([real_data[rand: rand +batch_size]]), (batch_size, 7))
+
+    for b in range(batch_size):
         # Случайный батч
-        real_matrix = np.array([real_data[np.random.randint(len(real_data))]])
+        real_data_list = np.resize(real_matrix[b], (7)).tolist()
 
-        real_data_list = real_matrix.tolist()[0][0]
-
-        ai_ans_list = np.reshape(np.array(ai.predict(real_matrix, verbose=False)), (4)).tolist()
+        ai_ans_list = np.reshape(np.array(ai.predict([[real_data_list]], verbose=False)), (4)).tolist()
 
         ai_ans_with_time = np.array(real_data_list[:3] + ai_ans_list)
         ai_ans_on_ai_list = ai.predict( np.reshape(ai_ans_with_time, (1, 1, 7)), verbose=False)
@@ -239,7 +241,7 @@ def print_ai_answers(ai, real_data, batch_size):
                     norm_humidity(List[2], True),
                     norm_wind(List[3], True),]
 
-        converted_real_data = [
+        real_data_list = [
                 norm_hours(real_data_list[0], True),
                 norm_day(real_data_list[1], True),
                 norm_month(real_data_list[2], True),
@@ -249,23 +251,23 @@ def print_ai_answers(ai, real_data, batch_size):
                 norm_wind(real_data_list[6], True),
         ]
 
-        converted_ai_ans_list = conv_ai_ans(ai_ans_list)
-        converted_ai_ans_on_ai_list = conv_ai_ans(ai_ans_on_ai_list)
+        ai_ans_list = conv_ai_ans(ai_ans_list)
+        ai_ans_on_ai_list = conv_ai_ans(ai_ans_on_ai_list)
 
 
         # В качестве ошибки просто добавляем разность между ответом ИИ и реальностью
         errors = np.array( np.abs(
-            np.array(converted_real_data[3:]) - np.array(converted_ai_ans_list)
+            np.array(real_data_list[3:]) - np.array(ai_ans_list)
         ))
         total_errors.append(errors)
 
 
         # Выводим всё
-        print(np.round(np.array( converted_real_data[:3]),      1), "\t",
-              np.round(np.array( converted_real_data[3:]),      1), "\t",
-              np.round(np.array( converted_ai_ans_list),        1), "\t",
-              np.round(np.array( converted_ai_ans_on_ai_list),  1), "\t",
-              np.round(np.array( errors),                       1))
+        print(np.round(np.array(real_data_list[:3]),      1), "\t",
+              np.round(np.array(real_data_list[3:]),      1), "\t",
+              np.round(np.array(ai_ans_list),             1), "\t",
+              np.round(np.array(ai_ans_on_ai_list),       1), "\t",
+              np.round(np.array(errors),                       1))
 
 
     total_errors = np.array(total_errors)

@@ -1,6 +1,6 @@
 from keras import Sequential
 import keras
-from keras.layers import Flatten, Dense, SimpleRNN, LSTM, BatchNormalization, Conv1D
+from keras.layers import Flatten, Dense, SimpleRNN, LSTM, BatchNormalization, Conv1D, Dropout
 import tensorflow as tf
 from time import time
 import numpy as np
@@ -28,7 +28,7 @@ tf.config.set_visible_devices([], 'GPU')
 
 # ВНИМАНИЕ!: get_moscow_data отличается от get_plank_history и get_weather_history тем,
 # что последнее значение это облачность (%)
-DATA_out = get_weather_history()
+DATA_out = get_plank_history()
 print(">>> Dataset loaded\n")
 
 
@@ -47,16 +47,16 @@ def get_ai(name):
         BatchNormalization(),
         Conv1D(16, 7, padding="same"),
         BatchNormalization(),
+        Conv1D(32, 7, padding="same"),
+        BatchNormalization(),
 
-        Dense(64, activation="tanh"),
+        Dropout(0.3),
+        Dense(32, activation="relu"),
         BatchNormalization(),
         LSTM(64, return_sequences=True, unroll=True),
         BatchNormalization(),
-        Dense(64, activation="tanh"),
-        BatchNormalization(),
-        LSTM(64, return_sequences=True, unroll=True),
-        BatchNormalization(),
-        Dense(64, activation="tanh"),
+        Dropout(0.3),
+        Dense(32, activation="relu"),
     ])(input_layer)
 
     output = Dense(1, activation="tanh", name=name)(model)
@@ -71,8 +71,9 @@ cloud_or_wind = get_ai("cloud_wind")  # cloud or wind
 
 
 ai = keras.Model(input_layer, [temperature, pressure, humidity, cloud_or_wind], name="Weather_Predictor")
-ai.compile(optimizer=keras.optimizers.Adagrad(0.001), loss="mean_absolute_error",
-           loss_weights={"temp": 10.0, "press": 10.0, "humid": 10.0, "cloud_wind": 10.0})
+ai.compile(optimizer=keras.optimizers.Adam(0.0001), loss="mean_squared_error",
+           loss_weights={"temp": 1000.0, "press": 100.0, "humid": 100.0, "cloud_wind": 100.0})
+           # Отдаём приоритет температуре, и увеличиваем ошибки (чтобы ИИ учисля)
 
 ai.summary(); print()
 
@@ -104,8 +105,8 @@ DATA_out = DATA_out[:, :, 3:]   # (ИИшке не надо предсказыв
 
 
 """Обучение"""
-# Берём столько же, сколько и выводим через print_ai_answers
-test_size = 100
+# Берём больше, чем выводим через print_ai_answers
+test_size = 2_000
 
 # Разделяем часть для обучения и для тестирования
 # В качестве ответа записываем значение природного явления
@@ -138,4 +139,4 @@ for learning_cycle in range(0, 99):
 
 
     # Выводим данные и сравниваем их "на глаз"
-    print_ai_answers(ai, test_data, 50)
+    print_ai_answers(ai, train_data, 100)
