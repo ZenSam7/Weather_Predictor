@@ -1,6 +1,9 @@
 from numpy import tanh, arctanh
 import numpy as np
 
+np.set_printoptions(suppress=True) # Убраем экспонинцеальную запись
+
+
 
 def norm_temperature(x, convert_back=False):
     """Нормализуем температуру от -1 до 1"""
@@ -57,7 +60,6 @@ def norm_month(x, convert_back=False):
         return int(x *6 +6)
 
     return (x -6)/6
-
 
 
 
@@ -212,79 +214,67 @@ def get_weather_history():
 
 
 
-def print_ai_answers(ai, real_data, learning_cycle, batch_size):
+def print_ai_answers(ai, real_data, batch_size):
     print("\n")
     print("Time\t\t\tReal Data\t\t\t\t\tAI answer\t\t\t\t\tAI answer on AI\t\t\t\tErrors ∆")
 
-    # Случайный батч
-    real_matrix = np.array([real_data[np.random.randint(len(real_data))]])
+    total_errors = []
+    for _ in range(batch_size):
+        # Случайный батч
+        real_matrix = np.array([real_data[np.random.randint(len(real_data))]])
 
-    real_data_list = real_matrix.tolist()[0]
-    ai_ans_list = np.reshape(np.array(ai.predict(real_matrix, verbose=False)), (batch_size, 4)).tolist()
+        real_data_list = real_matrix.tolist()[0][0]
 
-    ai_ans_with_time = np.array( [time + ans for time, ans in zip(
-                                 [time[:3] for time in real_data_list], ai_ans_list)])
-    ai_ans_on_ai_list = ai.predict( np.reshape(ai_ans_with_time, (1, batch_size, 7)), verbose=False)
-    ai_ans_on_ai_list = np.reshape(np.array(ai_ans_on_ai_list), (batch_size, 4)).tolist()
+        ai_ans_list = np.reshape(np.array(ai.predict(real_matrix, verbose=False)), (4)).tolist()
 
-
-    # Конвертируем данные из промежутка [-1; 1] в нормальную физическую величину
-    converted_real_data = []
-    for record in real_data_list:
-        converted_real_data.append([
-            norm_hours(record[0], True),
-            norm_day(record[1], True),
-            norm_month(record[2], True),
-            norm_temperature(record[3], True),
-            norm_pressure(record[4], True),
-            norm_humidity(record[5], True),
-            norm_wind(record[6], True),
-        ])
-
-    converted_ai_ans_list = []
-    for ai_ans in ai_ans_list:
-        converted_ai_ans_list.append([
-            norm_temperature(ai_ans[0], True),
-            norm_pressure(ai_ans[1], True),
-            norm_humidity(ai_ans[2], True),
-            norm_wind(ai_ans[3], True),
-        ])
-
-    converted_ai_ans_on_ai_list = []
-    for ai_ans_on_ai in ai_ans_list:
-        converted_ai_ans_on_ai_list.append([
-            norm_temperature(ai_ans_on_ai[0], True),
-            norm_pressure(ai_ans_on_ai[1], True),
-            norm_humidity(ai_ans_on_ai[2], True),
-            norm_wind(ai_ans_on_ai[3], True),
-        ])
+        ai_ans_with_time = np.array(real_data_list[:3] + ai_ans_list)
+        ai_ans_on_ai_list = ai.predict( np.reshape(ai_ans_with_time, (1, 1, 7)), verbose=False)
+        ai_ans_on_ai_list = np.reshape(np.array(ai_ans_on_ai_list), (4)).tolist()
 
 
-    # В качестве ошибки просто добавляем разность между ответом ИИ и реальностью
-    errors = []
-    for real, ai_ans in zip(converted_real_data, converted_ai_ans_list):
-        real = np.array(real[3:])
-        ai_ans = np.array(ai_ans)
+        # Конвертируем данные из промежутка [-1; 1] в нормальную физическую величину
+        def conv_ai_ans(List):
+            return [norm_temperature(List[0], True),
+                    norm_pressure(List[1], True),
+                    norm_humidity(List[2], True),
+                    norm_wind(List[3], True),]
 
-        errors.append(np.abs(real - ai_ans))
-    errors = np.array(errors)
+        converted_real_data = [
+                norm_hours(real_data_list[0], True),
+                norm_day(real_data_list[1], True),
+                norm_month(real_data_list[2], True),
+                norm_temperature(real_data_list[3], True),
+                norm_pressure(real_data_list[4], True),
+                norm_humidity(real_data_list[5], True),
+                norm_wind(real_data_list[6], True),
+        ]
+
+        converted_ai_ans_list = conv_ai_ans(ai_ans_list)
+        converted_ai_ans_on_ai_list = conv_ai_ans(ai_ans_on_ai_list)
 
 
-    # Выводим всё
-    for real, ai_ans, ai_on_ai, err in zip(converted_real_data,
-              converted_ai_ans_list, converted_ai_ans_on_ai_list, errors):
-        print(np.round(np.array(real[:3]),  1), "\t",
-              np.round(np.array(real[3:]),  1), "\t",
-              np.round(np.array(ai_ans),    1), "\t",
-              np.round(np.array(ai_on_ai),  1), "\t",
-              np.round(np.array(err),       1))
+        # В качестве ошибки просто добавляем разность между ответом ИИ и реальностью
+        errors = np.array( np.abs(
+            np.array(converted_real_data[3:]) - np.array(converted_ai_ans_list)
+        ))
+        total_errors.append(errors)
 
+
+        # Выводим всё
+        print(np.round(np.array( converted_real_data[:3]),      1), "\t",
+              np.round(np.array( converted_real_data[3:]),      1), "\t",
+              np.round(np.array( converted_ai_ans_list),        1), "\t",
+              np.round(np.array( converted_ai_ans_on_ai_list),  1), "\t",
+              np.round(np.array( errors),                       1))
+
+
+    total_errors = np.array(total_errors)
 
     print("\nMean errors:",
-          "\n\t Temperature:  ", np.round(np.mean(errors[:, 0]), 1),
-          "\n\t Pressure:     ", np.round(np.mean(errors[:, 1]), 1),
-          "\n\t Humidity:     ", np.round(np.mean(errors[:, 2]), 1),
-          "\n\t Wind:         ", np.round(np.mean(errors[:, 3]), 1),
-          "\n\n\t TOTAL:        ", np.round(np.mean(errors     ),  1))
+          "\n\t Temperature:  ", np.round(np.mean(total_errors[:, 0]), 1),
+          "\n\t Pressure:     ", np.round(np.mean(total_errors[:, 1]), 1),
+          "\n\t Humidity:     ", np.round(np.mean(total_errors[:, 2]), 1),
+          "\n\t Wind:         ", np.round(np.mean(total_errors[:, 3]), 1),
+          "\n\n\t TOTAL:        ",np.round(np.mean(total_errors     ), 1))
 
     print("\n")
