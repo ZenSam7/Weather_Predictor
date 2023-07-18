@@ -41,37 +41,49 @@ print(">>> Dataset loaded\n")
 input_layer = keras.Input((1, 7))
 
 
-def get_ai(name):
-    model = Sequential([
-        Conv1D(8, 7, padding="same"),
-        BatchNormalization(),
-        Conv1D(16, 7, padding="same"),
-        BatchNormalization(),
-        Conv1D(32, 7, padding="same"),
-        BatchNormalization(),
+class Arcitecture():
+    def get_ai(self, name: str):
+        model = Sequential([
+            Conv1D(8, 3, padding="same"),
+            BatchNormalization(),
+            Conv1D(16, 3, padding="same"),
+            BatchNormalization(),
 
-        Dense(64, activation="tanh"),
-        BatchNormalization(),
-        LSTM(64, return_sequences=True, unroll=True),
-        BatchNormalization(),
-        Dense(64, activation="tanh"),
-    ])(input_layer)
+            Dense(32, activation="tanh"),
+            BatchNormalization(),
+            LSTM(32, return_sequences=True, unroll=True),
+            BatchNormalization(),
+            Dense(32, activation="tanh"),
+            BatchNormalization(),
+            LSTM(32, return_sequences=True, unroll=True),
+            BatchNormalization(),
+            Dense(32, activation="tanh"),
+        ])(input_layer)
 
-    output = Dense(1, activation="tanh", name=name)(model)
+        output = Dense(1, activation="tanh", name=name)(model)
+        return output
 
-    return output
+
+# Создаём 4 полностью незаввисимые нейросети
+temperature = Arcitecture()
+temperature = temperature.get_ai("temp")
+
+pressure = Arcitecture()
+pressure = pressure.get_ai("press")
+
+humidity = Arcitecture()
+humidity = humidity.get_ai("humid")
+
+cloud_or_wind = Arcitecture()
+cloud_or_wind = cloud_or_wind.get_ai("cloud_wind")
 
 
-temperature = get_ai("temp")          # temperature
-pressure = get_ai("press")            # pressure
-humidity = get_ai("humid")            # humidity
-cloud_or_wind = get_ai("cloud_wind")  # cloud or wind
 
 
 ai = keras.Model(input_layer, [temperature, pressure, humidity, cloud_or_wind], name="Weather_Predictor")
-ai.compile(optimizer=keras.optimizers.Adam(1e-5), loss="mean_squared_error",
-           loss_weights={"temp": 5000.0, "press": 500.0, "humid": 500.0, "cloud_wind": 500.0})
-           # Отдаём приоритет температуре, и увеличиваем ошибки (иначе уни будут <1)
+ai.compile(optimizer=keras.optimizers.Adam(1e-4), loss="mean_squared_error",
+           loss_weights={"temp": 10_000, "press": 1000, "humid": 1000, "cloud_wind": 1000})
+           # Отдаём приоритет температуре, и увеличиваем ошибки (иначе они будут <1)
 
 ai.summary(); print()
 
@@ -125,7 +137,7 @@ for learning_cycle in range(0, 99):
 
     print(f">>> Learning the {SAVE_NAME(learning_cycle)}")
 
-    ai.fit(train_data, train_data_answer, epochs=3, batch_size=300, verbose=True, shuffle=False)
+    ai.fit(train_data, train_data_answer, epochs=3, batch_size=100, verbose=True, shuffle=False)
 
     print("\n")
 
@@ -137,4 +149,4 @@ for learning_cycle in range(0, 99):
 
 
     # Выводим данные и сравниваем их "на глаз"
-    print_ai_answers(ai, test_data, 100)
+    print_ai_answers(ai, train_data, 100)

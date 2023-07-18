@@ -15,9 +15,9 @@ def norm_temperature(x, convert_back=False):
 def norm_pressure(x, convert_back=False):
     """Нормализуем давление от -1 до 1"""
     if convert_back:
-        return round(arctanh(x) *20 +755, 1)
+        return round(arctanh(x) *20 +750, 1)
 
-    return tanh( (x -755)/20 )
+    return tanh( (x -750)/20 )
 
 def norm_humidity(x, convert_back=False):
     """Нормализуем влажность от -1 до 1"""
@@ -36,9 +36,9 @@ def norm_cloud(x, convert_back=False):
 def norm_wind(x, convert_back=False):
     """Нормализуем скорость ветра от -1 до 1"""
     if convert_back:
-        return round(arctanh(x) *2 +2, 1)
+        return round(arctanh(x) *6 +15, 1)
 
-    return tanh((x -2) /2)
+    return tanh((x -15) /6)
 
 def norm_hours(x, convert_back=False):
     """Нормализуем время суток от -1 до 1"""
@@ -60,6 +60,11 @@ def norm_month(x, convert_back=False):
         return int(x *6 +6)
 
     return (x -6)/6
+
+
+
+def clamp(num, Min, Max):
+    return min(max(Min, num), Max)
 
 
 
@@ -102,8 +107,8 @@ def get_moscow_data():
                 processed_data[0] = norm_hours(int(data[0][11:13]))
                 processed_data[1] = norm_day(int(data[0][:2]))
                 processed_data[2] = norm_month(int(data[0][3:5]))
-                processed_data[3] = norm_temperature(float(data[1].replace(",", ".")))
-                processed_data[4] = norm_pressure(float(data[2].replace(",", ".")))
+                processed_data[3] = norm_temperature(clamp(float(data[1].replace(",", ".")), -40, 40))
+                processed_data[4] = norm_pressure(clamp(float(data[2].replace(",", ".")), 700, 800))
                 processed_data[5] = norm_humidity(int(data[3]))
                 processed_data[6] = norm_cloud(int(data[4]))
 
@@ -154,10 +159,10 @@ def get_plank_history():
             processed_data[0] = norm_hours(int(data[0][11:13]) + int(data[0][14:16]) /60)
             processed_data[1] = norm_day(int(data[0][:2]))
             processed_data[2] = norm_month(int(data[0][3:5]))
-            processed_data[3] = norm_temperature(float(data[2]))
-            processed_data[4] = norm_pressure(float(data[1]) *100 / 133.322)
+            processed_data[3] = norm_temperature(clamp(float(data[2]), -40, 40))
+            processed_data[4] = norm_pressure(clamp(float(data[1]) *100 / 133.322, 700, 800))
             processed_data[5] = norm_humidity(float(data[5]))
-            processed_data[6] = norm_wind(float(data[12]) *10)
+            processed_data[6] = norm_wind(clamp(float(data[12]) *10, 0, 30))
 
             DATA.append(processed_data)
     return DATA
@@ -203,10 +208,10 @@ def get_weather_history():
             processed_data[0] = norm_hours(int(data[0][11:13]))
             processed_data[1] = norm_day(int(data[0][8:10]))
             processed_data[2] = norm_month(int(data[0][5:7]))
-            processed_data[3] = norm_temperature(float(data[3]))
-            processed_data[4] = norm_pressure(float(data[10]) * 0.750063755419211)
+            processed_data[3] = norm_temperature(clamp(float(data[3]), -40, 40))
+            processed_data[4] = norm_pressure(clamp(float(data[10]) * 0.750063755419211, 700, 800))
             processed_data[5] = norm_humidity(float(data[5]) * 100)
-            processed_data[6] = norm_wind(float(data[6]) * 1_000 / 3_600)
+            processed_data[6] = norm_wind(clamp(float(data[6]) * 1_000 / 3_600, 0, 30))
 
             DATA.append(processed_data)
     return DATA
