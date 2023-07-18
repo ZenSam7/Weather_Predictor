@@ -15,9 +15,9 @@ def norm_temperature(x, convert_back=False):
 def norm_pressure(x, convert_back=False):
     """Нормализуем давление от -1 до 1"""
     if convert_back:
-        return round(arctanh(x) *15 +755, 1)
+        return round(arctanh(x) *20 +755, 1)
 
-    return tanh( (x -755)/15 )
+    return tanh( (x -755)/20 )
 
 def norm_humidity(x, convert_back=False):
     """Нормализуем влажность от -1 до 1"""
@@ -228,10 +228,12 @@ def print_ai_answers(ai, real_data, batch_size):
         real_data_list = np.resize(real_matrix[b], (7)).tolist()
 
         ai_ans_list = np.reshape(np.array(ai.predict([[real_data_list]], verbose=False)), (4)).tolist()
+        ai_ans_list = (np.array(ai_ans_list) + np.array(real_data_list[3:])).tolist() # Остаточное обучение
 
         ai_ans_with_time = np.array(real_data_list[:3] + ai_ans_list)
-        ai_ans_on_ai_list = ai.predict( np.reshape(ai_ans_with_time, (1, 1, 7)), verbose=False)
-        ai_ans_on_ai_list = np.reshape(np.array(ai_ans_on_ai_list), (4)).tolist()
+        ai_on_ai_list = ai.predict(np.reshape(ai_ans_with_time, (1, 1, 7)), verbose=False)
+        ai_on_ai_list = np.reshape(np.array(ai_on_ai_list), (4)).tolist()
+        ai_on_ai_list = (np.array(ai_on_ai_list) + np.array(real_data_list[3:])).tolist() # Остаточное обучение
 
 
         # Конвертируем данные из промежутка [-1; 1] в нормальную физическую величину
@@ -252,7 +254,7 @@ def print_ai_answers(ai, real_data, batch_size):
         ]
 
         ai_ans_list = conv_ai_ans(ai_ans_list)
-        ai_ans_on_ai_list = conv_ai_ans(ai_ans_on_ai_list)
+        ai_on_ai_list = conv_ai_ans(ai_on_ai_list)
 
 
         # В качестве ошибки просто добавляем разность между ответом ИИ и реальностью
@@ -266,7 +268,7 @@ def print_ai_answers(ai, real_data, batch_size):
         print(np.round(np.array(real_data_list[:3]),      1), "\t",
               np.round(np.array(real_data_list[3:]),      1), "\t",
               np.round(np.array(ai_ans_list),             1), "\t",
-              np.round(np.array(ai_ans_on_ai_list),       1), "\t",
+              np.round(np.array(ai_on_ai_list), 1), "\t",
               np.round(np.array(errors),                       1))
 
 

@@ -50,13 +50,11 @@ def get_ai(name):
         Conv1D(32, 7, padding="same"),
         BatchNormalization(),
 
-        Dropout(0.3),
-        Dense(32, activation="relu"),
+        Dense(64, activation="tanh"),
         BatchNormalization(),
         LSTM(64, return_sequences=True, unroll=True),
         BatchNormalization(),
-        Dropout(0.3),
-        Dense(32, activation="relu"),
+        Dense(64, activation="tanh"),
     ])(input_layer)
 
     output = Dense(1, activation="tanh", name=name)(model)
@@ -71,9 +69,9 @@ cloud_or_wind = get_ai("cloud_wind")  # cloud or wind
 
 
 ai = keras.Model(input_layer, [temperature, pressure, humidity, cloud_or_wind], name="Weather_Predictor")
-ai.compile(optimizer=keras.optimizers.Adam(0.0001), loss="mean_squared_error",
-           loss_weights={"temp": 1000.0, "press": 100.0, "humid": 100.0, "cloud_wind": 100.0})
-           # Отдаём приоритет температуре, и увеличиваем ошибки (чтобы ИИ учисля)
+ai.compile(optimizer=keras.optimizers.Adam(1e-5), loss="mean_squared_error",
+           loss_weights={"temp": 5000.0, "press": 500.0, "humid": 500.0, "cloud_wind": 500.0})
+           # Отдаём приоритет температуре, и увеличиваем ошибки (иначе уни будут <1)
 
 ai.summary(); print()
 
@@ -106,7 +104,7 @@ DATA_out = DATA_out[:, :, 3:]   # (ИИшке не надо предсказыв
 
 """Обучение"""
 # Берём больше, чем выводим через print_ai_answers
-test_size = 2_000
+test_size = 10_000
 
 # Разделяем часть для обучения и для тестирования
 # В качестве ответа записываем значение природного явления
@@ -127,7 +125,7 @@ for learning_cycle in range(0, 99):
 
     print(f">>> Learning the {SAVE_NAME(learning_cycle)}")
 
-    ai.fit(train_data, train_data_answer, epochs=5, batch_size=100, verbose=True, shuffle=False)
+    ai.fit(train_data, train_data_answer, epochs=3, batch_size=300, verbose=True, shuffle=False)
 
     print("\n")
 
@@ -139,4 +137,4 @@ for learning_cycle in range(0, 99):
 
 
     # Выводим данные и сравниваем их "на глаз"
-    print_ai_answers(ai, train_data, 100)
+    print_ai_answers(ai, test_data, 100)
