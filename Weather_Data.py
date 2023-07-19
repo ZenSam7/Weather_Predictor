@@ -1,5 +1,9 @@
 from numpy import tanh, arctanh
 import numpy as np
+import time
+from urllib.request import urlretrieve
+import gzip
+import os
 
 np.set_printoptions(suppress=True) # Убраем экспонинцеальную запись
 
@@ -87,8 +91,6 @@ def get_moscow_data():
             # Без первой (идём от староого к новому) записи, т.к. она используется для смещения ответа
             # (т.е. чтобы мы на основе предыдущей записи создавали следующую)
             records = dataset.readlines()[1:][::-1]
-            len_file = len(records)
-            num_data = 0
 
             for string in records:
                 data = string.split(";")[:-2]
@@ -112,6 +114,15 @@ def get_moscow_data():
                 processed_data[6] = norm_cloud(int(data[4]))
 
                 DATA.append(processed_data)
+
+    # Заполняем промежуточными значеними (т.к. у нас данные идут с шагом в 3 часа)
+    DATA = np.array(DATA)
+    conv_DATA = []
+    for i in range(len(DATA) - 1):
+        for conved in np.linspace(DATA[i], DATA[i + 1], num=4).tolist()[1:]:
+            conv_DATA.append(conved)
+    DATA = conv_DATA
+
     return DATA
 
 
@@ -216,9 +227,96 @@ def get_weather_history():
     return DATA
 
 
+def get_fresh_data():
+    now_date = time.strftime("%d.%m.%Y")
+    download_url = f"https://ru4.rp5.ru/download/files.synop/27/27612.01.06.2023.{now_date}.1.0.0.ru.utf8.00000000.csv.gz"
+
+    # Скачиваем архивчик
+    urlretrieve(download_url, f"Datasets/FRESH_ARCHIVE.csv.gz")
+
+    # Загружаем данные
+    with open("Datasets/FRESH_ARCHIVE.csv.gz", "rb") as byte_file:
+        data = str(gzip.decompress(byte_file.read()), "utf-8")
+
+        data = [string.split(";") for string in data.split("\n")[7:]]
+
+        # Убираем всякие "", ' ', '\r', '', '""'
+        processed_data = []
+        for record in data:
+            to_append = []
+            for i in record:
+                val = i.replace('"', '').replace('\r', '')
+                # if val == "" or val == " " or val == '""' or val == '\r':
+                #     pass
+                # else:
+                to_append.append(val)
+            processed_data.append(to_append)
+        data = processed_data[:-1]
+
+        # Оставляем только необходимые данные (ещё будет влажность)
+        required_data = []
+        for d in data:
+            to_app_required_data = [d[0], d[1], d[2], d[5]]
+
+            # Влажность...
+            humidity = d[10].replace('.', '').replace('%', '').split()
+            if '–' in humidity[0]:
+                humidity[0] = humidity[0].split('–')
+                humidity = humidity[0]
+
+            #  качестве влажности выбираем максимальое значение
+            for ind, h in enumerate(humidity):
+                if h.isnumeric():
+                    humidity[ind] = int(h)
+                else:
+                    humidity[ind] = 0
+
+            to_app_required_data += [str(max(humidity))]
+
+            required_data.append(to_app_required_data)
+
+    # Удаляем архив
+    os.remove("Datasets/FRESH_ARCHIVE.csv.gz")
 
 
-def print_ai_answers(ai, real_data, batch_size):
+
+    # Переводим строки в числа для ИИшки
+    DATA = []
+    for data in required_data:
+        # Если попался брак, то пропускаем шаг
+        if '' in data or len(data) != 5: continue
+
+        processed_data = [0 for _ in range(7)]
+
+        # Преобразуем строку
+        # data[0] -> часы (в течении дня)
+        # datap[1] -> день
+        # data[2] -> месяц
+        processed_data[0] = norm_hours(int(data[0][11:13]))
+        processed_data[1] = norm_day(int(data[0][:2]))
+        processed_data[2] = norm_month(int(data[0][3:5]))
+        processed_data[3] = norm_temperature(clamp(float(data[1].replace(",", ".")), -40, 40))
+        processed_data[4] = norm_pressure(clamp(float(data[2].replace(",", ".")), 700, 800))
+        processed_data[5] = norm_humidity(int(data[3]))
+        processed_data[6] = norm_cloud(int(data[4]))
+
+        DATA.append(processed_data)
+
+    # Заполняем промежуточными значеними (т.к. у нас данные идут с шагом в 3 часа)
+    DATA = np.array(DATA)
+    conv_DATA = []
+    for i in range(len(DATA) - 1):
+        for conved in np.linspace(DATA[i], DATA[i + 1], num=4).tolist()[1:]:
+            conv_DATA.append(conved)
+    DATA = conv_DATA
+
+    return DATA
+
+
+
+
+
+def print_ai_answers(ai, real_data, batch_size, have_cloud=False):
     print("\n")
     print("Time\t\t\tReal Data\t\t\t\t\tAI answer\t\t\t\t\tAI answer on AI\t\t\t\tErrors ∆")
 
@@ -242,20 +340,18 @@ def print_ai_answers(ai, real_data, batch_size):
 
         # Конвертируем данные из промежутка [-1; 1] в нормальную физическую величину
         def conv_ai_ans(List):
-            return [norm_temperature(List[0], True),
+            return [
+                    norm_temperature(List[0], True),
                     norm_pressure(List[1], True),
                     norm_humidity(List[2], True),
-                    norm_wind(List[3], True),]
+                    norm_cloud(List[3], True) if have_cloud else norm_wind(List[3], True),
+                    ]
 
         real_data_list = [
                 norm_hours(real_data_list[0], True),
                 norm_day(real_data_list[1], True),
                 norm_month(real_data_list[2], True),
-                norm_temperature(real_data_list[3], True),
-                norm_pressure(real_data_list[4], True),
-                norm_humidity(real_data_list[5], True),
-                norm_wind(real_data_list[6], True),
-        ]
+        ] + conv_ai_ans(real_data_list[3:])
 
         ai_ans_list = conv_ai_ans(ai_ans_list)
         ai_on_ai_list = conv_ai_ans(ai_on_ai_list)

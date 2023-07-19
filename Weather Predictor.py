@@ -4,7 +4,8 @@ from keras.layers import Flatten, Dense, SimpleRNN, LSTM, BatchNormalization, Co
 import tensorflow as tf
 from time import time
 import numpy as np
-from Weather_Data import get_moscow_data, get_plank_history, get_weather_history, print_ai_answers
+from Weather_Data import get_moscow_data, get_plank_history, get_weather_history,\
+                         print_ai_answers, get_fresh_data
 
 # Убираем предупреждения
 import os
@@ -20,23 +21,18 @@ tf.config.set_visible_devices([], 'GPU')
 
 
 """Загружаем данные"""
-# В get_moscow_data 133_066 записей         (все данные идут с шагом в 3 часа, но зато с 2005 года)
-# В get_plank_history 420_551 записей       (все данные идут с шагом в 10 минут)
-# В get_weather_history 96_453 записей      (все данные идут с шагом в 1 час)
+# В get_moscow_data     133_066 записей      (все данные идут с шагом в 1 часа, и с 2005 года)
+# В get_plank_history   420_551 записей      (все данные идут с шагом в 10 минут)
+# В get_weather_history  96_453 записей      (все данные идут с шагом в 1 час)
+# В get_fresh_data      ??????? записей      (всё зависит от текущей даты, все данные идут с шагом в 1 час)
 
 # Причём get_plank_history и get_weather_history имеют одинаковй формат данных, т.е. их можно объединить
 
-# ВНИМАНИЕ!: get_moscow_data отличается от get_plank_history и get_weather_history тем,
+# ВНИМАНИЕ!: moscow_data и fresh_data отличается от plank_history и weather_history тем,
 # что последнее значение это облачность (%)
-DATA_out = np.array(get_moscow_data())
+DATA_out = get_fresh_data()
 print(">>> Dataset loaded\n")
 
-# Заполняем промежуточными значеними (т.к. у нас данные идут с шагом в 3 часа)
-conv_DATA_out = []
-for i in range(len(DATA_out) -1):
-    for conved in np.linspace(DATA_out[i], DATA_out[i +1], num=4).tolist()[1:]:
-        conv_DATA_out.append(conved)
-DATA_out = conv_DATA_out
 
 
 """Создаём ИИшки"""
@@ -102,7 +98,7 @@ DATA_out = DATA_out[:, :, 3:]   # ИИшке не надо предсказыв�
 
 """Обучение"""
 # Берём больше, чем выводим через print_ai_answers
-test_size = 2_000
+test_size = 1#_000
 
 # Разделяем часть для обучения и для тестирования
 # В качестве ответа записываем значение природного явления
@@ -115,7 +111,7 @@ test_data_answer = np.reshape(np.array([DATA_out[-test_size:, 0, :]]), (test_siz
 
 for learning_cycle in range(11, 99):
     # ЗАГРУЖАЕМСЯ
-    print(f">>> Loading the {SAVE_NAME(learning_cycle)}", end="\t\t")
+    print(f">>> Loading the Best_ai", end="\t\t")
     ai = tf.keras.models.load_model(save_path("Best_ai"))
     print("Done\n")
     ai.summary(); print()
@@ -136,7 +132,7 @@ for learning_cycle in range(11, 99):
 
 
     # Выводим данные и сравниваем их "на глаз"
-    print_ai_answers(ai, train_data, 300)
+    print_ai_answers(ai, train_data, len(train_data) -10, True)
 
     break
 
