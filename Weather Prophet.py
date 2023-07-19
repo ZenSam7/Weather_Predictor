@@ -1,6 +1,6 @@
 from keras import Sequential
 import keras
-from keras.layers import Flatten, Dense, SimpleRNN, LSTM, BatchNormalization, Conv1D, Dropout
+from keras.layers import Flatten, Dense, SimpleRNN, LSTM, BatchNormalization, Conv1D
 import tensorflow as tf
 from time import time
 import numpy as np
@@ -28,7 +28,7 @@ tf.config.set_visible_devices([], 'GPU')
 
 # ВНИМАНИЕ!: get_moscow_data отличается от get_plank_history и get_weather_history тем,
 # что последнее значение это облачность (%)
-DATA_out = get_plank_history()
+DATA_out = get_moscow_data()
 print(">>> Dataset loaded\n")
 
 
@@ -41,48 +41,30 @@ print(">>> Dataset loaded\n")
 input_layer = keras.Input((1, 7))
 
 
-class Arcitecture():
-    def get_ai(self, name: str):
-        model = Sequential([
-            Conv1D(8, 3, padding="same"),
-            BatchNormalization(),
-            Conv1D(16, 3, padding="same"),
-            BatchNormalization(),
+class Architecture:
+    def get_ai(self):
+        return Sequential([
+            Conv1D(8, 7, padding="same"),
+            Conv1D(16, 7, padding="same"),
+            Conv1D(32, 7, padding="same"),
 
-            Dense(32, activation="tanh"),
-            BatchNormalization(),
+            Dense(32, activation="relu"),
             LSTM(32, return_sequences=True, unroll=True),
-            BatchNormalization(),
-            Dense(32, activation="tanh"),
-            BatchNormalization(),
+            Dense(32, activation="relu"),
             LSTM(32, return_sequences=True, unroll=True),
-            BatchNormalization(),
-            Dense(32, activation="tanh"),
+            Dense(32, activation="relu"),
         ])(input_layer)
 
-        output = Dense(1, activation="tanh", name=name)(model)
-        return output
-
-
-# Создаём 4 полностью незаввисимые нейросети
-temperature = Arcitecture()
-temperature = temperature.get_ai("temp")
-
-pressure = Arcitecture()
-pressure = pressure.get_ai("press")
-
-humidity = Arcitecture()
-humidity = humidity.get_ai("humid")
-
-cloud_or_wind = Arcitecture()
-cloud_or_wind = cloud_or_wind.get_ai("cloud_wind")
-
-
+# Создаём 4 полностью независимые нейронки
+temperature = Dense(1, activation="tanh", name="temp")(Architecture().get_ai())
+pressure = Dense(1, activation="tanh", name="press")(Architecture().get_ai())
+humidity = Dense(1, activation="tanh", name="humid")(Architecture().get_ai())
+cloud_or_wind = Dense(1, activation="tanh", name="cloud_wind")(Architecture().get_ai())
 
 
 ai = keras.Model(input_layer, [temperature, pressure, humidity, cloud_or_wind], name="Weather_Predictor")
 ai.compile(optimizer=keras.optimizers.Adam(1e-4), loss="mean_squared_error",
-           loss_weights={"temp": 10_000, "press": 1000, "humid": 1000, "cloud_wind": 1000})
+           loss_weights={"temp": 10_000, "press": 1_000, "humid": 1_000, "cloud_wind": 1_000})
            # Отдаём приоритет температуре, и увеличиваем ошибки (иначе они будут <1)
 
 ai.summary(); print()
@@ -92,7 +74,7 @@ ai.summary(); print()
 """Сохранения / Загрузки"""
 def save_path(name): return f"Saves Weather Prophet/{name}"
 
-def SAVE_NAME(num): return f"AI_v2.0~{num}"
+def SAVE_NAME(num): return f"AI_v3.0~{num}"
 
 # Как загружать: ai = tf.keras.models.load_model(save_path(AI_NAME))
 # Как сохранять: ai.save(save_path(AI_NAME))
@@ -110,13 +92,13 @@ DATA_out = np.array(DATA_out).reshape((len(DATA_out), 1, 7))
 DATA_in = np.array(DATA_in).reshape((len(DATA_out), 1, 7))
 
 DATA_out = DATA_out - DATA_in   # Остаточное обучение
-DATA_out = DATA_out[:, :, 3:]   # (ИИшке не надо предсказывать время)
+DATA_out = DATA_out[:, :, 3:]   # ИИшке не надо предсказывать время
 
 
 
 """Обучение"""
 # Берём больше, чем выводим через print_ai_answers
-test_size = 10_000
+test_size = 1000
 
 # Разделяем часть для обучения и для тестирования
 # В качестве ответа записываем значение природного явления
@@ -137,16 +119,16 @@ for learning_cycle in range(0, 99):
 
     print(f">>> Learning the {SAVE_NAME(learning_cycle)}")
 
-    ai.fit(train_data, train_data_answer, epochs=3, batch_size=100, verbose=True, shuffle=False)
+    ai.fit(train_data, train_data_answer, epochs=1, batch_size=100, verbose=True, shuffle=False)
 
     print("\n")
 
 
     # Сохраняем
-    print(f">>> Saving the {SAVE_NAME(learning_cycle)}", end="  ")
+    print(f">>> Saving the {SAVE_NAME(learning_cycle)}", end="\t\t")
     ai.save(save_path(SAVE_NAME(learning_cycle)))
     print("Done (Ignore the WARNING)")
 
 
     # Выводим данные и сравниваем их "на глаз"
-    print_ai_answers(ai, train_data, 100)
+    print_ai_answers(ai, test_data, 100)

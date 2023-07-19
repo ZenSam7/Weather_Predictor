@@ -68,7 +68,6 @@ def clamp(num, Min, Max):
 
 
 
-
 def get_moscow_data():
     """
     -> out
@@ -95,7 +94,7 @@ def get_moscow_data():
                 data = string.split(";")[:-2]
 
                 # Если попался брак, то пропускаем шаг
-                if '' in data or len(data) != 7:
+                if '' in data or len(data) != 5:
                     continue
 
                 processed_data = [0 for _ in range(7)]
