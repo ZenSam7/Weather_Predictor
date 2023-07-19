@@ -260,7 +260,6 @@ def print_ai_answers(ai, real_data, batch_size):
         ai_ans_list = conv_ai_ans(ai_ans_list)
         ai_on_ai_list = conv_ai_ans(ai_on_ai_list)
 
-
         # В качестве ошибки просто добавляем разность между ответом ИИ и реальностью
         errors = np.array( np.abs(
             np.array(real_data_list[3:]) - np.array(ai_ans_list)
