@@ -28,9 +28,15 @@ tf.config.set_visible_devices([], 'GPU')
 
 # ВНИМАНИЕ!: get_moscow_data отличается от get_plank_history и get_weather_history тем,
 # что последнее значение это облачность (%)
-DATA_out = get_plank_history()[::6]
+DATA_out = np.array(get_moscow_data())
 print(">>> Dataset loaded\n")
 
+# Заполняем промежуточными значеними (т.к. у нас данные идут с шагом в 3 часа)
+conv_DATA_out = []
+for i in range(len(DATA_out) -1):
+    for conved in np.linspace(DATA_out[i], DATA_out[i +1], num=4).tolist()[1:]:
+        conv_DATA_out.append(conved)
+DATA_out = conv_DATA_out
 
 
 """Создаём ИИшки"""
@@ -110,7 +116,7 @@ test_data_answer = np.reshape(np.array([DATA_out[-test_size:, 0, :]]), (test_siz
 for learning_cycle in range(11, 99):
     # ЗАГРУЖАЕМСЯ
     print(f">>> Loading the {SAVE_NAME(learning_cycle)}", end="\t\t")
-    ai = tf.keras.models.load_model(save_path(SAVE_NAME(learning_cycle)))
+    ai = tf.keras.models.load_model(save_path("Best_ai"))
     print("Done\n")
     ai.summary(); print()
     learning_cycle += 1
