@@ -4,8 +4,7 @@ from keras.layers import Flatten, Dense, SimpleRNN, LSTM, BatchNormalization, Co
 import tensorflow as tf
 from time import time
 import numpy as np
-from Weather_Data import get_moscow_data, get_plank_history, get_weather_history,\
-                         print_ai_answers, get_fresh_data
+import Weather_Data as WD
 
 # Убираем предупреждения
 import os
@@ -21,16 +20,16 @@ tf.config.set_visible_devices([], 'GPU')
 
 
 """Загружаем данные"""
-# В get_moscow_data     133_066 записей      (все данные идут с шагом в 1 часа, и с 2005 года)
-# В get_plank_history   420_551 записей      (все данные идут с шагом в 10 минут)
-# В get_weather_history  96_453 записей      (все данные идут с шагом в 1 час)
-# В get_fresh_data      ??????? записей      (всё зависит от текущей даты, все данные идут с шагом в 1 час)
+# В WD.get_moscow_data     399_195 записей      (все данные идут с шагом в 1 часа, и с 2005 года)
+# В WD.get_plank_history   420_551 записей      (все данные идут с шагом в 10 минут)
+# В WD.get_weather_history  96_453 записей      (все данные идут с шагом в 1 час)
+# В WD.get_fresh_data          ??? записей      (всё зависит от текущей даты, все данные идут с шагом в 1 час)
 
 # Причём get_plank_history и get_weather_history имеют одинаковй формат данных, т.е. их можно объединить
 
 # ВНИМАНИЕ!: moscow_data и fresh_data отличается от plank_history и weather_history тем,
 # что последнее значение это облачность (%)
-DATA_out = get_fresh_data()
+DATA_out = WD.get_moscow_data()
 print(">>> Dataset loaded\n")
 
 
@@ -49,6 +48,7 @@ class Architecture:
             Conv1D(8, 7, padding="same"),
             Conv1D(16, 7, padding="same"),
             Conv1D(32, 7, padding="same"),
+            Conv1D(64, 7, padding="same"),
 
             Dense(32, activation="relu"),
             LSTM(32, return_sequences=True, unroll=True),
@@ -65,9 +65,9 @@ cloud_or_wind = Dense(1, activation="tanh", name="cloud_wind")(Architecture().ge
 
 
 ai = keras.Model(input_layer, [temperature, pressure, humidity, cloud_or_wind], name="Weather_Predictor")
-ai.compile(optimizer=keras.optimizers.Adam(1e-3), loss="mean_squared_error",
+ai.compile(optimizer=keras.optimizers.Adam(1e-4), loss="mean_squared_error",
            loss_weights={"temp": 10_000, "press": 1_000, "humid": 1_000, "cloud_wind": 1_000})
-           # Отдаём приоритет температуре, и увеличиваем ошибки (иначе они будут <1)
+           # Отдаём приоритет температуре, и увеличиваем ошибки (иначе они будут <<1)
 
 
 
@@ -91,14 +91,13 @@ DATA_out = DATA_out[1:]
 DATA_out = np.array(DATA_out).reshape((len(DATA_out), 1, 7))
 DATA_in = np.array(DATA_in).reshape((len(DATA_out), 1, 7))
 
-DATA_out = DATA_out - DATA_in   # Остаточное обучение
+DATA_out = WD.normalize(DATA_out - DATA_in) # Остаточное обучение (+ нормализуем от -1 до 1)
 DATA_out = DATA_out[:, :, 3:]   # ИИшке не надо предсказывать время
 
 
-
 """Обучение"""
-# Берём больше, чем выводим через print_ai_answers
-test_size = 1#_000
+# Берём больше, чем выводим через WD.print_ai_answers
+test_size = 1_000
 
 # Разделяем часть для обучения и для тестирования
 # В качестве ответа записываем значение природного явления
@@ -109,30 +108,29 @@ test_data = DATA_in[-test_size:]
 test_data_answer = np.reshape(np.array([DATA_out[-test_size:, 0, :]]), (test_size, 1, 4))
 
 
-for learning_cycle in range(11, 99):
+for learning_cycle in range(3, 4):
     # ЗАГРУЖАЕМСЯ
-    print(f">>> Loading the Best_ai", end="\t\t")
-    ai = tf.keras.models.load_model(save_path("Best_ai"))
+    print(f">>> Loading the {SAVE_NAME(learning_cycle)}", end="\t\t")
+    ai = tf.keras.models.load_model(save_path(SAVE_NAME(learning_cycle)))
     print("Done\n")
     ai.summary(); print()
     learning_cycle += 1
 
 
-    # print(f">>> Learning the {SAVE_NAME(learning_cycle)}")
-    #
-    # ai.fit(train_data, train_data_answer, epochs=1, batch_size=1, verbose=True, shuffle=False)
-    #
-    # print("\n")
-    #
-    #
-    # # Сохраняем
-    # print(f">>> Saving the {SAVE_NAME(learning_cycle)}", end="\t\t")
-    # ai.save(save_path(SAVE_NAME(learning_cycle)))
-    # print("Done (Ignore the WARNING)")
+    print(f">>> Learning the {SAVE_NAME(learning_cycle)}")
+
+    ai.fit(train_data, train_data_answer, epochs=1, batch_size=50, verbose=True, shuffle=False)
+
+    print("\n")
 
 
-    # Выводим данные и сравниваем их "на глаз"
-    print_ai_answers(ai, train_data, len(train_data) -10, True)
+    # Сохраняем
+    print(f">>> Saving the {SAVE_NAME(learning_cycle)}", end="\t\t")
+    ai.save(save_path(SAVE_NAME(learning_cycle)))
+    print("Done (Ignore the WARNING)")
 
-    break
 
+    # Выводим данные и сравниваем
+    WD.print_ai_answers(ai, test_data, 100)
+
+WD.get_weather_predict(ai, 2*24)

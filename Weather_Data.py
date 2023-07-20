@@ -1,13 +1,14 @@
 from numpy import tanh, arctanh
 import numpy as np
 import time
+from time import time as Time
 from urllib.request import urlretrieve
 import gzip
 import os
+import tqdm
 
 np.set_printoptions(suppress=True) # Убраем экспонинцеальную запись
-
-
+have_cloud = False
 
 def norm_temperature(x, convert_back=False):
     """Нормализуем температуру от -1 до 1"""
@@ -70,6 +71,45 @@ def norm_month(x, convert_back=False):
 def clamp(num, Min, Max):
     return min(max(Min, num), Max)
 
+def normalize(x, convert_back=False):
+    """Нормализуем данные от -1 до 1"""
+
+    if convert_back:
+        with open("Datasets/Info_About_Last_Dataset.txt", "r") as save:
+            save = save.read().split("\n")
+            MIN_DATA = float(save[1][4:])
+            MAX_DATA = float(save[2][4:])
+
+        result = (x +1) / 2
+        result = result * (MAX_DATA - MIN_DATA) + MIN_DATA
+        return result
+
+
+    # Сохраняем информацию о том, как потом нормализовать данные обратно
+    with open("Datasets/Info_About_Last_Dataset.txt", "w+") as save:
+        save.write(f"Data set data for last saved AI\n"
+                   f"MIN={np.min(x)}\n"
+                   f"MAX={np.max(x)}")
+
+    # Сначала нормализуем от 0 до 1
+    result = x - np.min(x)
+    if np.max(x) != 0.0:
+        result = result / np.max(result)
+
+    # Потом от -1 до 1
+    result = result *2 -1
+
+    return result
+
+
+def conv_ai_ans(List):
+    return [
+        norm_temperature(List[0], True),
+        norm_pressure(List[1], True),
+        norm_humidity(List[2], True),
+        norm_cloud(List[3], True) if have_cloud else norm_wind(List[3], True),
+    ]
+
 
 
 def get_moscow_data():
@@ -84,6 +124,7 @@ def get_moscow_data():
     6) Облачность
     """
 
+    have_cloud = True
     DATA = []
     for NAME_DATASET in ["Москва (ВДНХ)", "Москва (Центр)", "Москва (Аэропорт)"]:
         with open(f"Datasets/{NAME_DATASET}.csv") as dataset:
@@ -229,8 +270,7 @@ def get_weather_history():
 
 def get_fresh_data():
     now_date = time.strftime("%d.%m.%Y")
-    download_url = f"https://ru4.rp5.ru/download/files.synop/27/27612.01.06.2023.{now_date}.1.0.0.ru.utf8.00000000.csv.gz"
-
+    download_url = f"https://ru6.rp5.ru/download/files.synop/27/27612.01.05.2023.{now_date}.1.0.0.ru.utf8.00000000.csv.gz"
     # Скачиваем архивчик
     urlretrieve(download_url, f"Datasets/FRESH_ARCHIVE.csv.gz")
 
@@ -316,7 +356,7 @@ def get_fresh_data():
 
 
 
-def print_ai_answers(ai, real_data, batch_size, have_cloud=False):
+def print_ai_answers(ai, real_data, batch_size):
     print("\n")
     print("Time\t\t\tReal Data\t\t\t\t\tAI answer\t\t\t\t\tAI answer on AI\t\t\t\tErrors ∆")
 
@@ -325,28 +365,23 @@ def print_ai_answers(ai, real_data, batch_size, have_cloud=False):
     rand = np.random.randint(len(real_data) -batch_size)
     real_matrix = np.reshape(np.array([real_data[rand: rand +batch_size]]), (batch_size, 7))
 
-    for b in range(batch_size):
+    for b in range(1, batch_size):
         # Случайный батч
         real_data_list = np.resize(real_matrix[b], (7)).tolist()
 
-        ai_ans_list = np.reshape(np.array(ai.predict([[real_data_list]], verbose=False)), (4)).tolist()
-        ai_ans_list = (np.array(ai_ans_list) + np.array(real_data_list[3:])).tolist() # Остаточное обучение
+        ai_ans_list = np.reshape(np.array(ai.predict([[real_data_list]], verbose=False)), (4))
+        # Не забываем про остаточное обучение
+        ai_ans_list = normalize(ai_ans_list, True)
+        ai_ans_list = (ai_ans_list + real_matrix[b][3:]).tolist()
 
-        ai_ans_with_time = np.array(real_data_list[:3] + ai_ans_list)
+        ai_ans_with_time = np.array(real_data_list[:3] + ai_ans_list)   # Добавляем время
         ai_on_ai_list = ai.predict(np.reshape(ai_ans_with_time, (1, 1, 7)), verbose=False)
-        ai_on_ai_list = np.reshape(np.array(ai_on_ai_list), (4)).tolist()
-        ai_on_ai_list = (np.array(ai_on_ai_list) + np.array(real_data_list[3:])).tolist() # Остаточное обучение
-
+        ai_on_ai_list = np.reshape(np.array(ai_on_ai_list), (4))
+        # Не забываем про остаточное обучение
+        ai_on_ai_list = normalize(ai_on_ai_list, True)
+        ai_on_ai_list = (ai_on_ai_list + np.array(real_data_list[3:])).tolist()
 
         # Конвертируем данные из промежутка [-1; 1] в нормальную физическую величину
-        def conv_ai_ans(List):
-            return [
-                    norm_temperature(List[0], True),
-                    norm_pressure(List[1], True),
-                    norm_humidity(List[2], True),
-                    norm_cloud(List[3], True) if have_cloud else norm_wind(List[3], True),
-                    ]
-
         real_data_list = [
                 norm_hours(real_data_list[0], True),
                 norm_day(real_data_list[1], True),
@@ -367,7 +402,7 @@ def print_ai_answers(ai, real_data, batch_size, have_cloud=False):
         print(np.round(np.array(real_data_list[:3]),      1), "\t",
               np.round(np.array(real_data_list[3:]),      1), "\t",
               np.round(np.array(ai_ans_list),             1), "\t",
-              np.round(np.array(ai_on_ai_list), 1), "\t",
+              np.round(np.array(ai_on_ai_list),           1), "\t",
               np.round(np.array(errors),                       1))
 
 
@@ -381,3 +416,54 @@ def print_ai_answers(ai, real_data, batch_size, have_cloud=False):
           "\n\n\t TOTAL:        ",np.round(np.mean(total_errors     ), 1))
 
     print("\n")
+
+
+
+def get_weather_predict(ai, len_predict=7*24):
+    data = [ [i] for i in get_fresh_data()]
+
+    # Скармиливаем ИИшке данные за предыдущие дни
+    print("The weather forecast will start soon...")
+    ai.predict(data, verbose=False, batch_size=1)
+
+
+    print(f"Prediction for the next {len_predict //24} days:\t\t\t",
+          f"(Temperature, Pressure, Humidity, {'Cloud' if have_cloud else 'Wind'}",
+          f"in ℃, mmHg, %, {'%' if have_cloud else 'm/s'})",)
+
+
+    # Строим прогноз
+    predict_for_ai = [data[0][0]]
+    predict_for_human = []
+    for i in range(len_predict):
+        ai_pred = ai.predict([[predict_for_ai[-1]]], verbose=False)
+        ai_pred = np.reshape(np.array(ai_pred), (4))
+        ai_pred = ai_pred + np.array(predict_for_ai[-1][3:])  # Остаточное обучение
+
+        # Обновляем время
+        time = predict_for_ai[-1][:3]
+        time[0] += 1/12                          # Увеличиваем часы
+        time[1] += 1/15.5 if time[0] >1 else 0   # Увеличиваем день
+        time[2] += 1/6    if time[1] >1 else 0   # Увеличиваем месяц
+
+        # Следим, чтобы зачения не выходили за границы
+        time = [-1 if i>1 else i for i in time]
+
+
+        # Добавляем время к ответу ИИ
+        predict_for_ai.append(time + ai_pred.tolist())
+
+        # Выводим прогноз
+        time_for_human = [norm_hours(time[0], True),
+                          norm_day(time[1], True),
+                          norm_month(time[2], True)]
+
+        predictional_weather = conv_ai_ans(ai_pred)
+        print(f"{'{:02}'.format(time_for_human[1])}.{'{:02}'.format(time_for_human[2])}",
+              f"{'{:02}'.format(time_for_human[0])}:00:\t",
+              predictional_weather[0],
+              predictional_weather[1],
+              predictional_weather[2],
+              predictional_weather[3],
+              )
+
