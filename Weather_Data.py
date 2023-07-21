@@ -431,7 +431,7 @@ def print_weather_predict(ai, len_predict_days=3):
           f"in ℃, mmHg, %, {'%' if have_cloud else 'm/s'})",)
 
 
-    predict_for_ai = np.array([[i] for i in get_fresh_data()])
+    predict_for_ai = np.array([[i] for i in get_fresh_data()][::-1])
 
     # Строим прогноз
     for i in range(len_predict_days *24):

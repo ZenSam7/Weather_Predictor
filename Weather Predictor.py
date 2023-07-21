@@ -1,5 +1,6 @@
 from keras import Sequential
 import keras
+import os
 from keras.layers import Flatten, Dense, SimpleRNN, LSTM, BatchNormalization, Conv1D
 import tensorflow as tf
 import numpy as np
@@ -120,9 +121,14 @@ def ai_name(name):
     SAVE_NAME = lambda num: f"{name}~{num}"
 
 
-def load_ai(loading_with_learning_cycle=0, print_summary=False):
+def load_ai(loading_with_learning_cycle=-1, print_summary=False):
     """ЗАГРУЖАЕМСЯ"""
     global ai
+
+    # Вычисляем номер последнего сохранения с текущем именем
+    if loading_with_learning_cycle == -1:
+        loading_with_learning_cycle = int(sorted([save_name if SAVE_NAME(0)[:-2] in save_name
+                    else None for save_name in os.listdir("Saves Weather Prophet")])[-1].split("~")[-1])
 
     print(f">>> Loading the {SAVE_NAME(loading_with_learning_cycle)}", end="\t\t")
     ai = tf.keras.models.load_model(save_path(SAVE_NAME(loading_with_learning_cycle)))
@@ -133,7 +139,7 @@ def load_ai(loading_with_learning_cycle=0, print_summary=False):
 
 
 
-def train_ai(start_on, finish_on,
+def train_ai(start_on=-1, finish_on=99,
              save_every_learning_cycle=True,
              epochs=3, batch_size=100,  verbose=2,
              print_ai_answers=True, len_prints_ai_answers=100,
@@ -143,6 +149,11 @@ def train_ai(start_on, finish_on,
     if use_callbacks:
         callbacks = [keras.callbacks.EarlyStopping(monitor="loss",
                     min_delta=callbacks_min_delta, patience=callbacks_patience, verbose=False)]
+
+    # Продолжаем с последнего сохранения, если start_on == -1
+    if start_on == -1:
+        start_on = int(sorted([save_name if SAVE_NAME(0)[:-2] in save_name else None
+                        for save_name in os.listdir("Saves Weather Prophet")])[-1].split("~")[-1])
 
 
     for learning_cycle in range(start_on, finish_on):
@@ -163,7 +174,7 @@ def train_ai(start_on, finish_on,
 
         # Выводим данные и сравниваем
         if print_ai_answers:
-            WD.print_ai_answers(ai, test_data, len_prints_ai_answers)
+            WD.print_ai_answers(ai, train_data, len_prints_ai_answers)
 
         if print_weather_predict:
             WD.print_weather_predict(ai, len_predict_days)
@@ -175,7 +186,7 @@ if __name__ == "__main__":
     ai_name("NN")
 
     # create_ai(5, 5, 32)
-    load_ai(0, print_summary=True)
+    load_ai(-1, print_summary=True)
 
     load_data("moscow")
-    train_ai(0, 5, epochs=3, batch_size=200, verbose=1)
+    train_ai(-1, 10, epochs=1, batch_size=50, verbose=1)
