@@ -2,6 +2,7 @@ from numpy import tanh, arctanh
 import numpy as np
 import time
 from time import time as Time
+import datetime as dt
 from urllib.request import urlretrieve
 import gzip
 import os
@@ -112,6 +113,7 @@ def conv_ai_ans(List):
 
 
 
+
 def get_moscow_data():
     """
     -> out
@@ -213,7 +215,7 @@ def get_plank_history():
             processed_data[3] = norm_temperature(clamp(float(data[2]), -40, 40))
             processed_data[4] = norm_pressure(clamp(float(data[1]) *100 / 133.322, 700, 800))
             processed_data[5] = norm_humidity(float(data[5]))
-            processed_data[6] = norm_wind(clamp(float(data[12]) *10, 0, 30))
+            processed_data[6] = norm_wind(clamp(float(data[12]) *10, 0, 25))
 
             DATA.append(processed_data)
     return DATA
@@ -262,17 +264,30 @@ def get_weather_history():
             processed_data[3] = norm_temperature(clamp(float(data[3]), -40, 40))
             processed_data[4] = norm_pressure(clamp(float(data[10]) * 0.750063755419211, 700, 800))
             processed_data[5] = norm_humidity(float(data[5]) * 100)
-            processed_data[6] = norm_wind(clamp(float(data[6]) * 1_000 / 3_600, 0, 30))
+            processed_data[6] = norm_wind(clamp(float(data[6]) * 1_000 / 3_600, 0, 25))
 
             DATA.append(processed_data)
     return DATA
 
 
-def get_fresh_data():
-    now_date = time.strftime("%d.%m.%Y")
-    download_url = f"https://ru6.rp5.ru/download/files.synop/27/27612.01.05.2023.{now_date}.1.0.0.ru.utf8.00000000.csv.gz"
+def get_fresh_data(how_days=60):
+    now_date = dt.datetime.today()
+    last_date = now_date - dt.timedelta(days=how_days)     # Берём промежутк в how_days дней
+
+    now_date = now_date.strftime("%d.%m.%Y")
+    last_date = last_date.strftime("%d.%m.%Y")
+
     # Скачиваем архивчик
-    urlretrieve(download_url, f"Datasets/FRESH_ARCHIVE.csv.gz")
+    for i in range(1, 10):
+        try:
+            urlretrieve(f"https://ru{i}.rp5.ru/download/files.synop/27/27612." \
+                            f"{last_date}.{now_date}.1.0.0.ru.utf8.00000000.csv.gz",
+                        f"Datasets/FRESH_ARCHIVE.csv.gz")
+        except:
+            pass
+        else:
+            break
+
 
     # Загружаем данные
     with open("Datasets/FRESH_ARCHIVE.csv.gz", "rb") as byte_file:
@@ -358,7 +373,7 @@ def get_fresh_data():
 
 def print_ai_answers(ai, real_data, batch_size):
     print("\n")
-    print("Time\t\t\tReal Data\t\t\t\t\tAI answer\t\t\t\t\tAI answer on AI\t\t\t\tErrors ∆")
+    print("Time\t\t\tReal Data\t\t\t\t\tAI answer\t\t\t\t\tErrors ∆")
 
     total_errors = []
 
@@ -374,13 +389,6 @@ def print_ai_answers(ai, real_data, batch_size):
         ai_ans_list = normalize(ai_ans_list, True)
         ai_ans_list = (ai_ans_list + real_matrix[b][3:]).tolist()
 
-        ai_ans_with_time = np.array(real_data_list[:3] + ai_ans_list)   # Добавляем время
-        ai_on_ai_list = ai.predict(np.reshape(ai_ans_with_time, (1, 1, 7)), verbose=False)
-        ai_on_ai_list = np.reshape(np.array(ai_on_ai_list), (4))
-        # Не забываем про остаточное обучение
-        ai_on_ai_list = normalize(ai_on_ai_list, True)
-        ai_on_ai_list = (ai_on_ai_list + np.array(real_data_list[3:])).tolist()
-
         # Конвертируем данные из промежутка [-1; 1] в нормальную физическую величину
         real_data_list = [
                 norm_hours(real_data_list[0], True),
@@ -389,7 +397,6 @@ def print_ai_answers(ai, real_data, batch_size):
         ] + conv_ai_ans(real_data_list[3:])
 
         ai_ans_list = conv_ai_ans(ai_ans_list)
-        ai_on_ai_list = conv_ai_ans(ai_on_ai_list)
 
         # В качестве ошибки просто добавляем разность между ответом ИИ и реальностью
         errors = np.array( np.abs(
@@ -402,7 +409,6 @@ def print_ai_answers(ai, real_data, batch_size):
         print(np.round(np.array(real_data_list[:3]),      1), "\t",
               np.round(np.array(real_data_list[3:]),      1), "\t",
               np.round(np.array(ai_ans_list),             1), "\t",
-              np.round(np.array(ai_on_ai_list),           1), "\t",
               np.round(np.array(errors),                       1))
 
 
@@ -419,29 +425,23 @@ def print_ai_answers(ai, real_data, batch_size):
 
 
 
-def get_weather_predict(ai, len_predict=7*24):
-    data = [ [i] for i in get_fresh_data()]
-
-    # Скармиливаем ИИшке данные за предыдущие дни
-    print("The weather forecast will start soon...")
-    ai.predict(data, verbose=False, batch_size=1)
-
-
-    print(f"Prediction for the next {len_predict //24} days:\t\t\t",
+def print_weather_predict(ai, len_predict_days=3):
+    print(f"Prediction for the next {len_predict_days} days:\t\t\t",
           f"(Temperature, Pressure, Humidity, {'Cloud' if have_cloud else 'Wind'}",
           f"in ℃, mmHg, %, {'%' if have_cloud else 'm/s'})",)
 
 
+    predict_for_ai = np.array([[i] for i in get_fresh_data()])
+
     # Строим прогноз
-    predict_for_ai = [data[0][0]]
-    predict_for_human = []
-    for i in range(len_predict):
-        ai_pred = ai.predict([[predict_for_ai[-1]]], verbose=False)
-        ai_pred = np.reshape(np.array(ai_pred), (4))
-        ai_pred = ai_pred + np.array(predict_for_ai[-1][3:])  # Остаточное обучение
+    for i in range(len_predict_days *24):
+        # Скармливаем ИИшке данные за все предыдущие дни
+        ai_pred = ai.predict_on_batch(predict_for_ai)
+        ai_pred = np.reshape(np.array(ai_pred)[:, -1], (4))
+        ai_pred = ai_pred + np.array(predict_for_ai[-1, 0, 3:])  # Остаточное обучение
 
         # Обновляем время
-        time = predict_for_ai[-1][:3]
+        time = predict_for_ai[-1, 0][:3]
         time[0] += 1/12                          # Увеличиваем часы
         time[1] += 1/15.5 if time[0] >1 else 0   # Увеличиваем день
         time[2] += 1/6    if time[1] >1 else 0   # Увеличиваем месяц
@@ -451,7 +451,9 @@ def get_weather_predict(ai, len_predict=7*24):
 
 
         # Добавляем время к ответу ИИ
-        predict_for_ai.append(time + ai_pred.tolist())
+        # predict_for_ai.append([time + ai_pred.tolist()])
+        predict_for_ai = np.insert(predict_for_ai, [predict_for_ai.shape[0]],
+                                   [time + ai_pred.tolist()], axis=0)
 
         # Выводим прогноз
         time_for_human = [norm_hours(time[0], True),
@@ -467,3 +469,4 @@ def get_weather_predict(ai, len_predict=7*24):
               predictional_weather[3],
               )
 
+    print("\n")
