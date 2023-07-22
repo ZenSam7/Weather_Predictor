@@ -24,20 +24,20 @@ def what_device_use(device="cpu"):
         tf.config.set_visible_devices([], "GPU")
 
 
-def load_data(name_db="moscow", len_test_data=1_000):
+def load_data(name_db="moscow", len_test_data=0):
     """Загружаем данные"""
     global train_data, train_data_answer, test_data, test_data_answer
-    """
-    В WD.get_moscow_data     399_195 записей      (все данные идут с шагом в 1 часа)
-    В WD.get_plank_history   420_551 записей      (все данные идут с шагом в 10 минут)
-    В WD.get_weather_history  96_453 записей      (все данные идут с шагом в 1 час)
-    В WD.get_fresh_data        1_440 записей      (данные за последние 60 дней, идут с шагом в 1 час)
 
-    Причём get_plank_history и get_weather_history имеют одинаковй формат данных, т.е. их можно объединить\n
+    # В WD.get_moscow_data     399_195 записей      (все данные идут с шагом в 1 часа)
+    # В WD.get_plank_history   420_551 записей      (все данные идут с шагом в 10 минут)
+    # В WD.get_weather_history  96_453 записей      (все данные идут с шагом в 1 час)
+    # В WD.get_fresh_data        1_440 записей      (данные за последние 60 дней, идут с шагом в 1 час)
+    #
+    # Причём get_plank_history и get_weather_history имеют одинаковй формат данных, т.е. их можно объединить\n
+    #
+    # ВНИМАНИЕ!: moscow_data и fresh_data отличается от plank_history и weather_history тем,
+    # что последнее значение это облачность (%)
 
-    ВНИМАНИЕ!: moscow_data и fresh_data отличается от plank_history и weather_history тем,
-    что последнее значение это облачность (%)
-    """
     if name_db == "moscow":
         DATA_out = WD.get_moscow_data()
     elif name_db == "plank":
@@ -56,19 +56,22 @@ def load_data(name_db="moscow", len_test_data=1_000):
     DATA_in = DATA_out[:-1]
     DATA_out = DATA_out[1:]
 
+    # Преобразуем данные
     DATA_out = np.array(DATA_out).reshape((len(DATA_out), 1, 7))
     DATA_in = np.array(DATA_in).reshape((len(DATA_out), 1, 7))
 
-    DATA_out = WD.normalize(DATA_out - DATA_in) # Остаточное обучение (+ нормализуем от -1 до 1)
+    DATA_out = WD.normalize(DATA_out - DATA_in) # Остаточное обучение + нормализуем от -1 до 1
     DATA_out = DATA_out[:, :, 3:]               # ИИшке не надо предсказывать время
 
     # Разделяем часть для обучения и для тестирования
-    # В качестве ответа записываем значение природного явления
-    train_data = DATA_in[:-len_test_data]
-    train_data_answer = np.reshape(np.array([DATA_out[:-len_test_data, 0, :]]), (len(train_data), 1, 4))
+    train_data = DATA_in[:-len_test_data] if len_test_data > 0 else DATA_in
+    train_data_answer = DATA_out[:-len_test_data] if len_test_data > 0 else DATA_out
 
-    test_data = DATA_in[-len_test_data:]
-    test_data_answer = np.reshape(np.array([DATA_out[-len_test_data:, 0, :]]), (len_test_data, 1, 4))
+    if len_test_data > 0:
+        test_data = DATA_in[-len_test_data:]
+        test_data_answer = DATA_out[-len_test_data:, 0, :]
+    else:
+        test_data, test_data_answer = [], []
 
 
 def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32):
@@ -139,29 +142,44 @@ def load_ai(loading_with_learning_cycle=-1, print_summary=False):
 
 
 
-def train_ai(start_on=-1, finish_on=99,
-             save_every_learning_cycle=True,
-             epochs=3, batch_size=100,  verbose=2,
-             print_ai_answers=True, len_prints_ai_answers=100,
-             print_weather_predict=True, len_predict_days=3,
-             use_callbacks=False, callbacks_min_delta=10, callbacks_patience=3):
+def train_ai(start_on=-1, finish_on=99, # Начинаем с номера последнего сохранения до finish_on
+             save_every_learning_cycle=True,    # Сохранять ли каждую ИИшку
+             epochs=3, batch_size=100,  verbose=2, # Параметры fit()
+             print_ai_answers=True, len_prints_ai_answers=100, # Выводить и сравнивать данные, или нет
+             print_weather_predict=True, len_predict_days=3, # Выводить ли  прогноз погоды
+             use_callbacks=False, callbacks_min_delta=10, callbacks_patience=3, # Параметры callbacks
+             shift_dataset=True, start_with_dataset_offset=0, # Смещаем данные на 1 час каждый цикл
+                     # (т.е. после первого смещения ИИшка должна предсказывать на 2 часа вперёд, потом на 3...)
+             ):
     """Обучение"""
-    if use_callbacks:
-        callbacks = [keras.callbacks.EarlyStopping(monitor="loss",
-                    min_delta=callbacks_min_delta, patience=callbacks_patience, verbose=False)]
+    global train_data, train_data_answer, test_data, test_data_answer
+    num_dataset_offset = 1
+
+    # Сдвигаемм наборы данных
+    if start_with_dataset_offset > 0:
+        num_dataset_offset += start_with_dataset_offset
+        train_data = train_data[: -start_with_dataset_offset]
+        train_data_answer = train_data_answer[start_with_dataset_offset:]
+        if len(train_data) > 0:
+            test_data = test_data[: -start_with_dataset_offset]
+            test_data_answer = test_data_answer[start_with_dataset_offset:]
+
+
+    callbacks = [keras.callbacks.EarlyStopping(monitor="loss",
+                min_delta=callbacks_min_delta, patience=callbacks_patience, verbose=False)] \
+        if use_callbacks else None
 
     # Продолжаем с последнего сохранения, если start_on == -1
     if start_on == -1:
         start_on = int(sorted([save_name if SAVE_NAME(0)[:-2] in save_name else None
                         for save_name in os.listdir("Saves Weather Prophet")])[-1].split("~")[-1])
 
-
+    # Циклы обучения
     for learning_cycle in range(start_on, finish_on):
-        print(f">>> Learning the {SAVE_NAME(learning_cycle)}")
+        print(f">>> Learning the {SAVE_NAME(learning_cycle)}\t\t\tСмещение данных: {num_dataset_offset} ч")
         ai.fit(train_data, train_data_answer,
                epochs=epochs, batch_size=batch_size,
-               verbose=verbose, shuffle=False,
-               callbacks=callbacks if use_callbacks else None)
+               verbose=verbose, shuffle=False, callbacks=callbacks)
         print()
 
 
@@ -174,10 +192,20 @@ def train_ai(start_on=-1, finish_on=99,
 
         # Выводим данные и сравниваем
         if print_ai_answers:
-            WD.print_ai_answers(ai, train_data, len_prints_ai_answers)
-
+            # Используем train_data если test_data нет
+            WD.print_ai_answers(ai, test_data if len(test_data)>0 else train_data, len_prints_ai_answers)
         if print_weather_predict:
             WD.print_weather_predict(ai, len_predict_days)
+
+
+        # Создаём смещение данных на 1 час
+        if shift_dataset:
+            num_dataset_offset += 1
+            train_data = train_data[: -1]
+            train_data_answer = train_data_answer[1:]
+            if len(train_data) > 0:
+                test_data = test_data[: -1]
+                test_data_answer = test_data_answer[1:]
 
 
 """Скрипт"""
@@ -188,5 +216,5 @@ if __name__ == "__main__":
     # create_ai(5, 5, 32)
     load_ai(-1, print_summary=True)
 
-    load_data("moscow")
-    train_ai(-1, 10, epochs=1, batch_size=50, verbose=1)
+    load_data("moscow", len_test_data=0)
+    train_ai(epochs=3, batch_size=100, verbose=1, start_with_dataset_offset=1)

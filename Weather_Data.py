@@ -126,6 +126,7 @@ def get_moscow_data():
     6) Облачность
     """
 
+    global have_cloud
     have_cloud = True
     DATA = []
     for NAME_DATASET in ["Москва (ВДНХ)", "Москва (Центр)", "Москва (Аэропорт)"]:
@@ -280,13 +281,18 @@ def get_fresh_data(how_days=60):
     # Скачиваем архивчик
     for i in range(1, 10):
         try:
-            urlretrieve(f"https://ru{i}.rp5.ru/download/files.synop/27/27612." \
-                            f"{last_date}.{now_date}.1.0.0.ru.utf8.00000000.csv.gz",
+            urlretrieve(f"https://ru{i}.rp5.ru/download/files.synop/27/27612."\
+                        f"{last_date}.{now_date}.1.0.0.ru.utf8.00000000.csv.gz",
                         f"Datasets/FRESH_ARCHIVE.csv.gz")
         except:
-            pass
+            continue
         else:
             break
+    else:     # Если не удалось скачать
+        raise RuntimeError(f"Пожалуйста, перейдите по сслыке: https://rp5.ru/Weather_archive_in_Moscow\n"
+              f"И попробуйте скачать архив погоды с {last_date} до {now_date}, "
+              f"после этого перезапустите программу\n"
+              f"(архив можно сразу после скачивания удалить, а страницу закрыть)")
 
 
     # Загружаем данные
@@ -308,7 +314,7 @@ def get_fresh_data(how_days=60):
             processed_data.append(to_append)
         data = processed_data[:-1]
 
-        # Оставляем только необходимые данные (ещё будет влажность)
+        # Оставляем только необходимые данные
         required_data = []
         for d in data:
             to_app_required_data = [d[0], d[1], d[2], d[5]]
@@ -319,7 +325,7 @@ def get_fresh_data(how_days=60):
                 humidity[0] = humidity[0].split('–')
                 humidity = humidity[0]
 
-            #  качестве влажности выбираем максимальое значение
+            # В качестве влажности выбираем максимальое значение
             for ind, h in enumerate(humidity):
                 if h.isnumeric():
                     humidity[ind] = int(h)
