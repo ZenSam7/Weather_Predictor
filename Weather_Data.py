@@ -9,7 +9,6 @@ import os
 import tqdm
 
 np.set_printoptions(suppress=True) # Убраем экспонинцеальную запись
-have_cloud = False
 
 def norm_temperature(x, convert_back=False):
     """Нормализуем температуру от -1 до 1"""
@@ -38,13 +37,6 @@ def norm_cloud(x, convert_back=False):
         return int(x *50 +50)
 
     return (x -50)/50
-
-def norm_wind(x, convert_back=False):
-    """Нормализуем скорость ветра от -1 до 1"""
-    if convert_back:
-        return round(arctanh(x) *6 +15, 1)
-
-    return tanh((x -15) /6)
 
 def norm_hours(x, convert_back=False):
     """Нормализуем время суток от -1 до 1"""
@@ -108,9 +100,29 @@ def conv_ai_ans(List):
         norm_temperature(List[0], True),
         norm_pressure(List[1], True),
         norm_humidity(List[2], True),
-        norm_cloud(List[3], True) if have_cloud else norm_wind(List[3], True),
+        norm_cloud(List[3], True),
+        List[4],
     ]
 
+def conv_rain_to_words(x):
+    word = ""
+
+    if abs(x) <= 0.15 :
+        return "Clear"
+
+    if x > 0:
+        word = "rain"
+    elif x < 0:
+        word = "snow"
+
+    if abs(x) <= 0.4:
+        word = "light " + word
+    elif 0.4 <= abs(x) <= 0.7:
+        word = word #"moderate " + word
+    elif abs(x) >= 0.7:
+        word = "heavy " + word
+
+    return word.capitalize()
 
 
 
@@ -124,40 +136,69 @@ def get_moscow_data():
     4) Давление (мм.рт.ст.)
     5) Влажность
     6) Облачность
+    7) Количество осадков
     """
 
-    global have_cloud
-    have_cloud = True
     DATA = []
-    for NAME_DATASET in ["Москва (ВДНХ)", "Москва (Центр)", "Москва (Аэропорт)"]:
-        with open(f"Datasets/{NAME_DATASET}.csv") as dataset:
-            # Без первой строки с начальным символом;
-            # Без первой (идём от староого к новому) записи, т.к. она используется для смещения ответа
-            # (т.е. чтобы мы на основе предыдущей записи создавали следующую)
-            records = dataset.readlines()[1:][::-1]
+    with open(f"Datasets/Moscow_Weather.txt") as dataset:
+        # Без первой строки с начальным символом;
+        # Без первой (идём от староого к новому) записи, т.к. она используется для смещения ответа
+        # (т.е. чтобы мы на основе предыдущей записи создавали следующую)
 
-            for string in records:
-                data = string.split(";")[:-2]
+        for string in dataset.readlines()[1:][::-1]:
+            data = string.split(";")[:-1]
 
-                # Если попался брак, то пропускаем шаг
-                if '' in data or len(data) != 5:
-                    continue
+            # Если попался брак, то пропускаем шаг
+            if '' in data or len(data) != 6: continue
 
-                processed_data = [0 for _ in range(7)]
 
-                # Преобразуем строку
-                # data[0] -> часы (в течении дня)
-                # datap[1] -> день
-                # data[2] -> месяц
-                processed_data[0] = norm_hours(int(data[0][11:13]))
-                processed_data[1] = norm_day(int(data[0][:2]))
-                processed_data[2] = norm_month(int(data[0][3:5]))
-                processed_data[3] = norm_temperature(clamp(float(data[1].replace(",", ".")), -40, 40))
-                processed_data[4] = norm_pressure(clamp(float(data[2].replace(",", ".")), 700, 800))
-                processed_data[5] = norm_humidity(int(data[3]))
-                processed_data[6] = norm_cloud(int(data[4]))
+            processed_data = [0 for _ in range(8)]
 
-                DATA.append(processed_data)
+            # Преобразуем строку
+            # data[0] -> часы (в течении дня)
+            # datap[1] -> день
+            # data[2] -> месяц
+            processed_data[0] = norm_hours(int(data[0][11:13]))
+            processed_data[1] = norm_day(int(data[0][:2]))
+            processed_data[2] = norm_month(int(data[0][3:5]))
+            processed_data[3] = norm_temperature(clamp(float(data[1].replace(",", ".")), -40, 40))
+            processed_data[4] = norm_pressure(clamp(float(data[2].replace(",", ".")), 700, 800))
+            processed_data[5] = norm_humidity(int(data[3]))
+
+            # Облачность...
+            clouds = data[4].replace('.', '').replace('%', '').split()
+
+            if '–' in clouds[0]:
+                clouds[0] = clouds[0].split('–')
+
+                processed_data[6] = norm_cloud(int(clouds[0][1]))
+            else:
+                # Заменяем слова числами
+                for ind, h in enumerate(clouds):
+                    if h.isnumeric():
+                        clouds[ind] = int(h)
+                    else:
+                        clouds[ind] = 0
+                # В качестве облачности выбираем максимальное значение
+                processed_data[6] = norm_cloud(max(clouds))
+
+
+            # Добавляем осадки
+            # (-1 -> сильный снег, -0.5 -> снег, 0 -> Осадков нет, 0.5 -> дождь, 1 -> сильный дождь)
+            # (кстати, "ливень"/"ливневый" не означает "сильный")
+            processed_data[7] = 0
+            data[5] = data[5].lower()
+            if "снег" in data[5] or "дождь и снег" in data[5]:
+                processed_data[7] = -0.5
+            if "дожд" in data[5]:
+                processed_data[7] = 0.5
+
+            if "слаб" in data[5]:
+                processed_data[7] /= 2
+            if "силь" in data[5]:
+                processed_data[7] *= 2
+
+            DATA.append(processed_data)
 
     # Заполняем промежуточными значеними (т.к. у нас данные идут с шагом в 3 часа)
     DATA = np.array(DATA)
@@ -167,107 +208,6 @@ def get_moscow_data():
             conv_DATA.append(conved)
     DATA = conv_DATA
 
-    return DATA
-
-
-def get_plank_history():
-    """
-    <- inp
-    0) Время
-    1) Давление (паскаль)
-    2) ℃
-    3) Температура (Кельвин)
-    4) Точка росы
-    5) Относительная влажность
-    6) Давление пара насыщения
-    7) Давление газа
-    8) Дефицит давления пара
-    9) Удельная влажность
-    10) Концентрация водяного пара
-    11) Герметичный (?)
-    12) Скорость ветра (м/с)
-    13) Максимальная скорость ветра
-    14) Направление ветра в градусах
-
-
-    -> out
-    0) Время (часы) (float)
-    1) Время (день)
-    2) Время (месяц)
-    3) ℃
-    4) Давление (мм.рт.ст.)
-    5) Влажность (%)
-    6) Скорость ветра (м/с)
-    """
-
-    DATA = []
-    with open("Datasets/max_planck_weather_ts.txt") as file:
-        for string in file.readlines():
-            data = string.split(",")
-
-            # Если попался брак, то пропускаем шаг
-            if '' in data or len(data) != 15: continue
-
-            processed_data = [0 for _ in range(7)]
-
-            processed_data[0] = norm_hours(int(data[0][11:13]) + int(data[0][14:16]) /60)
-            processed_data[1] = norm_day(int(data[0][:2]))
-            processed_data[2] = norm_month(int(data[0][3:5]))
-            processed_data[3] = norm_temperature(clamp(float(data[2]), -40, 40))
-            processed_data[4] = norm_pressure(clamp(float(data[1]) *100 / 133.322, 700, 800))
-            processed_data[5] = norm_humidity(float(data[5]))
-            processed_data[6] = norm_wind(clamp(float(data[12]) *10, 0, 25))
-
-            DATA.append(processed_data)
-    return DATA
-
-
-def get_weather_history():
-    """
-    <- inp
-    0) Время
-    1) Описание
-    2) Тип осадков
-    3) Температура ℃
-    4) Кажущаяся температура ℃
-    5) Влажность
-    6) Скорость ветра (km/h)
-    7) Направление ветра °
-    8) Видимость (km)
-    9) Loud Cover
-    10) Давление (миллибар)
-    11) Ежедневная сводка
-
-
-    -> out
-    0) Время (часы)
-    1) Время (день)
-    2) Время (месяц)
-    3) Температура
-    4) Давление (мм.рт.ст.)
-    5) Влажность (%)
-    6) Скорость ветра (м/c)
-    """
-
-    DATA = []
-    with open("Datasets/weatherHistory.txt") as file:
-        for string in file.readlines():
-            data = string.split(",")
-
-            # Если попался брак, то пропускаем шаг
-            if '' in data or len(data) != 12: continue
-
-            processed_data = [0 for _ in range(7)]
-
-            processed_data[0] = norm_hours(int(data[0][11:13]))
-            processed_data[1] = norm_day(int(data[0][8:10]))
-            processed_data[2] = norm_month(int(data[0][5:7]))
-            processed_data[3] = norm_temperature(clamp(float(data[3]), -40, 40))
-            processed_data[4] = norm_pressure(clamp(float(data[10]) * 0.750063755419211, 700, 800))
-            processed_data[5] = norm_humidity(float(data[5]) * 100)
-            processed_data[6] = norm_wind(clamp(float(data[6]) * 1_000 / 3_600, 0, 25))
-
-            DATA.append(processed_data)
     return DATA
 
 
@@ -307,34 +247,13 @@ def get_fresh_data(how_days=60):
             to_append = []
             for i in record:
                 val = i.replace('"', '').replace('\r', '')
-                # if val == "" or val == " " or val == '""' or val == '\r':
-                #     pass
-                # else:
                 to_append.append(val)
             processed_data.append(to_append)
         data = processed_data[:-1]
 
         # Оставляем только необходимые данные
-        required_data = []
-        for d in data:
-            to_app_required_data = [d[0], d[1], d[2], d[5]]
+        required_data = [[d[0], d[1], d[2], d[5], d[10], d[11]] for d in data]
 
-            # Влажность...
-            humidity = d[10].replace('.', '').replace('%', '').split()
-            if '–' in humidity[0]:
-                humidity[0] = humidity[0].split('–')
-                humidity = humidity[0]
-
-            # В качестве влажности выбираем максимальое значение
-            for ind, h in enumerate(humidity):
-                if h.isnumeric():
-                    humidity[ind] = int(h)
-                else:
-                    humidity[ind] = 0
-
-            to_app_required_data += [str(max(humidity))]
-
-            required_data.append(to_app_required_data)
 
     # Удаляем архив
     os.remove("Datasets/FRESH_ARCHIVE.csv.gz")
@@ -345,9 +264,9 @@ def get_fresh_data(how_days=60):
     DATA = []
     for data in required_data:
         # Если попался брак, то пропускаем шаг
-        if '' in data or len(data) != 5: continue
+        if '' in data or len(data) != 6: continue
 
-        processed_data = [0 for _ in range(7)]
+        processed_data = [0 for _ in range(8)]
 
         # Преобразуем строку
         # data[0] -> часы (в течении дня)
@@ -359,7 +278,38 @@ def get_fresh_data(how_days=60):
         processed_data[3] = norm_temperature(clamp(float(data[1].replace(",", ".")), -40, 40))
         processed_data[4] = norm_pressure(clamp(float(data[2].replace(",", ".")), 700, 800))
         processed_data[5] = norm_humidity(int(data[3]))
-        processed_data[6] = norm_cloud(int(data[4]))
+
+        # Облачность...
+        clouds = data[4].replace('.', '').replace('%', '').split()
+
+        if '–' in clouds[0]:
+            clouds[0] = clouds[0].split('–')
+
+            processed_data[6] = norm_cloud(int(clouds[0][1]))
+        else:
+            # Заменяем слова числами
+            for ind, h in enumerate(clouds):
+                if h.isnumeric():
+                    clouds[ind] = int(h)
+                else:
+                    clouds[ind] = 0
+            # В качестве облачности выбираем максимальное значение
+            processed_data[6] = norm_cloud(max(clouds))
+
+        # Добавляем осадки
+        # (-1 -> сильный снег, -0.5 -> снег, 0 -> Осадков нет, 0.5 -> дождь, 1 -> сильный дождь)
+        # (кстати, "ливень"/"ливневый" не означает "сильный")
+        processed_data[7] = 0
+        data[5] = data[5].lower()
+        if "снег" in data[5] or "дождь и снег" in data[5]:
+            processed_data[7] = -0.5
+        if "дожд" in data[5]:
+            processed_data[7] = 0.5
+
+        if "слаб" in data[5]:
+            processed_data[7] /= 2
+        if "силь" in data[5]:
+            processed_data[7] *= 2
 
         DATA.append(processed_data)
 
@@ -379,18 +329,18 @@ def get_fresh_data(how_days=60):
 
 def print_ai_answers(ai, real_data, batch_size):
     print("\n")
-    print("Time\t\t\tReal Data\t\t\t\t\tAI answer\t\t\t\t\tErrors ∆")
+    print("Time\t\t\tReal Data\t\t\t\t\t\t\tAI answer\t\t\t\t\t\tErrors ∆")
 
     total_errors = []
 
     rand = np.random.randint(len(real_data) -batch_size)
-    real_matrix = np.reshape(np.array([real_data[rand: rand +batch_size]]), (batch_size, 7))
+    real_matrix = np.reshape(np.array([real_data[rand: rand +batch_size]]), (batch_size, 8))
 
     for b in range(1, batch_size):
         # Случайный батч
-        real_data_list = np.resize(real_matrix[b], (7)).tolist()
+        real_data_list = np.resize(real_matrix[b], (8)).tolist()
 
-        ai_ans_list = np.reshape(np.array(ai.predict([[real_data_list]], verbose=False)), (4))
+        ai_ans_list = np.reshape(np.array(ai.predict([[real_data_list]], verbose=False)), (5))
         # Не забываем про остаточное обучение
         ai_ans_list = normalize(ai_ans_list, True)
         ai_ans_list = (ai_ans_list + real_matrix[b][3:]).tolist()
@@ -424,7 +374,8 @@ def print_ai_answers(ai, real_data, batch_size):
           "\n\t Temperature:  ", np.round(np.mean(total_errors[:, 0]), 1),
           "\n\t Pressure:     ", np.round(np.mean(total_errors[:, 1]), 1),
           "\n\t Humidity:     ", np.round(np.mean(total_errors[:, 2]), 1),
-          "\n\t Wind:         ", np.round(np.mean(total_errors[:, 3]), 1),
+          "\n\t Cloud:        ", np.round(np.mean(total_errors[:, 3]), 1),
+          "\n\t Rain:         ", np.round(np.mean(total_errors[:, 4]), 1),
           "\n\n\t TOTAL:        ",np.round(np.mean(total_errors     ), 1))
 
     print("\n")
@@ -433,8 +384,7 @@ def print_ai_answers(ai, real_data, batch_size):
 
 def print_weather_predict(ai, len_predict_days=3):
     print(f"Prediction for the next {len_predict_days} days:\t\t\t",
-          f"(Temperature, Pressure, Humidity, {'Cloud' if have_cloud else 'Wind'}",
-          f"in ℃, mmHg, %, {'%' if have_cloud else 'm/s'})",)
+          f"(Temperature, Pressure, Humidity, Cloud, Raininess)")
 
 
     predict_for_ai = np.array([[i] for i in get_fresh_data()][::-1])
@@ -443,7 +393,7 @@ def print_weather_predict(ai, len_predict_days=3):
     for i in range(len_predict_days *24):
         # Скармливаем ИИшке данные за все предыдущие дни
         ai_pred = ai.predict_on_batch(predict_for_ai)
-        ai_pred = np.reshape(np.array(ai_pred)[:, -1], (4))
+        ai_pred = np.reshape(np.array(ai_pred)[:, -1], (5))
         ai_pred = ai_pred + np.array(predict_for_ai[-1, 0, 3:])  # Остаточное обучение
 
         # Обновляем время
@@ -469,10 +419,11 @@ def print_weather_predict(ai, len_predict_days=3):
         predictional_weather = conv_ai_ans(ai_pred)
         print(f"{'{:02}'.format(time_for_human[1])}.{'{:02}'.format(time_for_human[2])}",
               f"{'{:02}'.format(time_for_human[0])}:00:\t",
-              predictional_weather[0],
-              predictional_weather[1],
-              predictional_weather[2],
-              predictional_weather[3],
+              predictional_weather[0], "℃\t",
+              predictional_weather[1], "mmHg\t",
+              predictional_weather[2], "%\t",
+              predictional_weather[3], "%\t",
+              conv_rain_to_words(predictional_weather[4]),
               )
 
     print("\n")
