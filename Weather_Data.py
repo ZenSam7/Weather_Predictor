@@ -1,12 +1,16 @@
 from numpy import tanh, arctanh
 import numpy as np
+
 import time
 from time import time as Time
 import datetime as dt
+
 from urllib.request import urlretrieve
+import requests
+import json
 import gzip
+
 import os
-import tqdm
 
 np.set_printoptions(suppress=True) # Убраем экспонинцеальную запись
 
@@ -73,12 +77,13 @@ def normalize(x, convert_back=False):
             MIN_DATA = float(save[1][4:])
             MAX_DATA = float(save[2][4:])
 
-        result = (x +1) / 2
+        result = (x +1) / 2 # от 0 до 1
         result = result * (MAX_DATA - MIN_DATA) + MIN_DATA
         return result
 
 
     # Сохраняем информацию о том, как потом нормализовать данные обратно
+    os.remove("Datasets/Info_About_Last_Dataset.txt")
     with open("Datasets/Info_About_Last_Dataset.txt", "w+") as save:
         save.write(f"Data set data for last saved AI\n"
                    f"MIN={np.min(x)}\n"
@@ -95,7 +100,7 @@ def normalize(x, convert_back=False):
     return result
 
 
-def conv_ai_ans(List):
+def conv_ai_ans_for_human(List):
     return [
         norm_temperature(List[0], True),
         norm_pressure(List[1], True),
@@ -107,7 +112,7 @@ def conv_ai_ans(List):
 def conv_rain_to_words(x):
     word = ""
 
-    if abs(x) <= 0.15 :
+    if abs(x) <= 0.1 :
         return "Clear"
 
     if x > 0:
@@ -206,14 +211,32 @@ def get_moscow_data():
     for i in range(len(DATA) - 1):
         for conved in np.linspace(DATA[i], DATA[i + 1], num=4).tolist()[1:]:
             conv_DATA.append(conved)
-    DATA = conv_DATA
 
-    return DATA
+    # Часы и числа дня заполняем отдельно
+    time_h, time_d, time_m = DATA[0, 0], DATA[0, 1], DATA[0, 2]    # Начинаем с начала
+    ind = 0     # Надо, чтобы одновременно заполнять DATA
+    while ind != len(DATA) -1:
+        time_h += 1/12
+        if time_h >1:
+            time_h = -1
+
+        time_d += 1/15.5 if time_h == -1 else 0
+        if time_d > 1:
+            time_d = -1
+
+        time_m += 1/6 if time_d == -1 else 0
+        if time_m > 1:
+            time_m = -1
+
+        DATA[ind, 0], DATA[ind, 1], DATA[ind, 2] = time_h, time_d, time_m
+        ind += 1
+
+    return conv_DATA
 
 
-def get_fresh_data(how_days=60):
+def get_fresh_data(how_many_context):
     now_date = dt.datetime.today()
-    last_date = now_date - dt.timedelta(days=how_days)     # Берём промежутк в how_days дней
+    last_date = now_date - dt.timedelta(days=how_many_context // 24 + 1)
 
     now_date = now_date.strftime("%d.%m.%Y")
     last_date = last_date.strftime("%d.%m.%Y")
@@ -229,10 +252,12 @@ def get_fresh_data(how_days=60):
         else:
             break
     else:     # Если не удалось скачать
-        raise RuntimeError(f"Пожалуйста, перейдите по сслыке: https://rp5.ru/Weather_archive_in_Moscow\n"
-              f"И попробуйте скачать архив погоды с {last_date} до {now_date}, "
-              f"после этого перезапустите программу\n"
-              f"(архив можно сразу после скачивания удалить, а страницу закрыть)")
+        raise RuntimeError(
+              f"Пожалуйста, перейдите по ссылке: https://rp5.ru/%D0%90%D1%80%D1%85%D0%B8%D0%B2_"
+              f"%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D1%8B_%D0%B2_%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B5_%28%D0%92%D0%94%D0%9D%D0%A5%29\n"
+              f"Выберете дату с {last_date} по {now_date}, в формате csv и кодировкой utf8, "
+              f"потом нажмите 'Выбрать в файл GZ (архив)' (архив можно не скачивать)\n"
+              f"После этого перезапустите программу")
 
 
     # Загружаем данные
@@ -319,25 +344,43 @@ def get_fresh_data(how_days=60):
     for i in range(len(DATA) - 1):
         for conved in np.linspace(DATA[i], DATA[i + 1], num=4).tolist()[1:]:
             conv_DATA.append(conved)
-    DATA = conv_DATA
 
-    return DATA
+    # Часы и числа дня заполняем отдельно
+    time_h, time_d, time_m = DATA[0, 0], DATA[0, 1], DATA[0, 2]    # Начинаем с начала
+    ind = 0     # Надо, чтобы одновременно заполнять DATA
+    while ind != len(DATA) -1:
+        time_h += 1/12
+        if time_h >1:
+            time_h = -1
 
+        time_d += 1/15.5 if time_h == -1 else 0
+        if time_d > 1:
+            time_d = -1
+
+        time_m += 1/6 if time_d == -1 else 0
+        if time_m > 1:
+            time_m = -1
+
+        DATA[ind, 0], DATA[ind, 1], DATA[ind, 2] = time_h, time_d, time_m
+        ind += 1
+
+
+    return conv_DATA[:how_many_context]
 
 
 
 
 def print_ai_answers(ai, real_data, batch_size):
     print("\n")
-    print("Time\t\t\tReal Data\t\t\t\t\t\t\tAI answer\t\t\t\t\t\tErrors ∆")
+    print("Time\t\t\tReal Data\t\t\t\t\t\t\tAI answer\t\t\t\t\t\t\tErrors ∆")
 
     total_errors = []
 
+    # Случайный батч
     rand = np.random.randint(len(real_data) -batch_size)
     real_matrix = np.reshape(np.array([real_data[rand: rand +batch_size]]), (batch_size, 8))
 
     for b in range(1, batch_size):
-        # Случайный батч
         real_data_list = np.resize(real_matrix[b], (8)).tolist()
 
         ai_ans_list = np.reshape(np.array(ai.predict([[real_data_list]], verbose=False)), (5))
@@ -350,9 +393,9 @@ def print_ai_answers(ai, real_data, batch_size):
                 norm_hours(real_data_list[0], True),
                 norm_day(real_data_list[1], True),
                 norm_month(real_data_list[2], True),
-        ] + conv_ai_ans(real_data_list[3:])
+        ] + conv_ai_ans_for_human(real_data_list[3:])
 
-        ai_ans_list = conv_ai_ans(ai_ans_list)
+        ai_ans_list = conv_ai_ans_for_human(ai_ans_list)
 
         # В качестве ошибки просто добавляем разность между ответом ИИ и реальностью
         errors = np.array( np.abs(
@@ -382,22 +425,29 @@ def print_ai_answers(ai, real_data, batch_size):
 
 
 
-def print_weather_predict(ai, len_predict_days=3):
+def print_weather_predict(ai, len_predict_days=3, amount_available_context=4):
     print(f"Prediction for the next {len_predict_days} days:\t\t\t",
           f"(Temperature, Pressure, Humidity, Cloud, Raininess)")
 
+    # Самое последнее - самое свежее
+    # Также сразу подаём только amount_available_context данных для прогноза
+    fresh_data = np.reshape(np.array(get_fresh_data(len_predict_days * 24)),
+                            (len_predict_days * 24, 8))[::-1][:amount_available_context]
+    times = fresh_data[:, :3].tolist()
+    predicts_history = fresh_data[:, 3:].tolist()
 
-    predict_for_ai = np.array([[i] for i in get_fresh_data()][::-1])
 
-    # Строим прогноз
-    for i in range(len_predict_days *24):
-        # Скармливаем ИИшке данные за все предыдущие дни
-        ai_pred = ai.predict_on_batch(predict_for_ai)
-        ai_pred = np.reshape(np.array(ai_pred)[:, -1], (5))
-        ai_pred = ai_pred + np.array(predict_for_ai[-1, 0, 3:])  # Остаточное обучение
+    for _ in range(0, len_predict_days*24):
+        # Делаем прогноз по всей истории, а потом отбираем один прогноз, относящееся к последней записи
+        preds_on_preds = ai.predict(np.array( [[t + p] for t, p in zip(times, predicts_history)] ), verbose=False)
+        ai_ans = np.reshape(np.array(preds_on_preds)[:, -1], (5))
+        ai_ans = normalize(ai_ans, True)
+
+        predicts_history.append( (ai_ans + np.array(predicts_history[-1])).tolist() )
+        predicts_history = predicts_history[1:]
 
         # Обновляем время
-        time = predict_for_ai[-1, 0][:3]
+        time = times[-1]
         time[0] += 1/12                          # Увеличиваем часы
         time[1] += 1/15.5 if time[0] >1 else 0   # Увеличиваем день
         time[2] += 1/6    if time[1] >1 else 0   # Увеличиваем месяц
@@ -405,25 +455,21 @@ def print_weather_predict(ai, len_predict_days=3):
         # Следим, чтобы зачения не выходили за границы
         time = [-1 if i>1 else i for i in time]
 
+        times.append(time)
 
-        # Добавляем время к ответу ИИ
-        # predict_for_ai.append([time + ai_pred.tolist()])
-        predict_for_ai = np.insert(predict_for_ai, [predict_for_ai.shape[0]],
-                                   [time + ai_pred.tolist()], axis=0)
 
         # Выводим прогноз
         time_for_human = [norm_hours(time[0], True),
                           norm_day(time[1], True),
                           norm_month(time[2], True)]
 
-        predictional_weather = conv_ai_ans(ai_pred)
+        pred_weather_for_human = conv_ai_ans_for_human(predicts_history[-1])
         print(f"{'{:02}'.format(time_for_human[1])}.{'{:02}'.format(time_for_human[2])}",
               f"{'{:02}'.format(time_for_human[0])}:00:\t",
-              predictional_weather[0], "℃\t",
-              predictional_weather[1], "mmHg\t",
-              predictional_weather[2], "%\t",
-              predictional_weather[3], "%\t",
-              conv_rain_to_words(predictional_weather[4]),
+              pred_weather_for_human[0], "℃\t",
+              pred_weather_for_human[1], "mmHg\t",
+              pred_weather_for_human[2], "%\t",
+              pred_weather_for_human[3], "%\t",
+              conv_rain_to_words(pred_weather_for_human[4]),
               )
-
     print("\n")

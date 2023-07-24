@@ -1,7 +1,7 @@
 from keras import Sequential
 import keras
 import os
-from keras.layers import Flatten, Dense, SimpleRNN, LSTM, BatchNormalization, Conv1D
+from keras.layers import Flatten, Dense, SimpleRNN, LSTM, BatchNormalization, Conv1D, Dropout
 import tensorflow as tf
 import numpy as np
 import Weather_Data as WD
@@ -50,7 +50,7 @@ def load_data(name_db="moscow", len_test_data=0):
     DATA_out = np.array(DATA_out).reshape((len(DATA_out), 1, 8))
     DATA_in = np.array(DATA_in).reshape((len(DATA_out), 1, 8))
 
-    DATA_out = WD.normalize(DATA_out - DATA_in) # Остаточное обучение + нормализуем от -1 до 1
+    DATA_out = WD.normalize(DATA_out - DATA_in) # Остаточное обучение + нормализуем от -1 до 1 (а не от -0.01 до 0.01)
     DATA_out = DATA_out[:, :, 3:]               # ИИшке не надо предсказывать время
 
     # Разделяем часть для обучения и для тестирования
@@ -64,7 +64,7 @@ def load_data(name_db="moscow", len_test_data=0):
         test_data, test_data_answer = [], []
 
 
-def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32):
+def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32, print_summary=True):
     """Создаём ИИшки"""
     global ai
     # Суть в том, чтобы расперелить задачи по предсказыванию между разными нейронками
@@ -77,7 +77,10 @@ def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32):
     class Architecture:
         def get_ai(self):
             num_conv_neurons = 8
+            # Добавляем нормализаци, т.к. некоторый значения больше склонны бать с одной стороны (если взять среднее)
+            # (например температура чаще положительная, чем отрицательная (в москве))
             list_layers = []
+
             # Добавляем Conv1D
             for _ in range(num_layers_conv):
                 list_layers.append(Conv1D(num_conv_neurons, 8, padding="same"))
@@ -86,10 +89,9 @@ def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32):
             # Добавляем остальные слои
             for i in range(num_ai_layers):
                 if i % 2 == 0:
-                    list_layers.append(Dense(num_neurons, activation="relu"))
-                else:
                     list_layers.append(LSTM(num_neurons, return_sequences=True, unroll=True))
-
+                else:
+                    list_layers.append(Dense(num_neurons, activation="relu"))
 
             return Sequential(list_layers)(input_layer)
 
@@ -102,9 +104,12 @@ def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32):
 
 
     ai = keras.Model(input_layer, [temperature, pressure, humidity, cloud, rain], name="Weather_Predictor")
-    ai.compile(optimizer=keras.optimizers.Adam(1e-4), loss="mean_squared_error",
+    ai.compile(optimizer=keras.optimizers.Adam(1e-3), loss="mean_squared_error",
                loss_weights={"temp": 100_000, "press": 10_000, "humid": 10_000, "cloud": 10_000, "rain": 100_000},)
                # Отдаём приоритет температуре и осадкам, и увеличиваем ошибки (иначе они будут ≈0)
+
+    if print_summary:
+        ai.summary(); print()
 
 
 def ai_name(name):
@@ -137,9 +142,9 @@ def train_ai(start_on=-1, finish_on=99, # Начинаем с номера по�
              save_every_learning_cycle=True,    # Сохранять ли каждую ИИшку
              epochs=3, batch_size=100,  verbose=2, # Параметры fit()
              print_ai_answers=True, len_prints_ai_answers=100, # Выводить и сравнивать данные, или нет
-             print_weather_predict=True, len_predict_days=3, # Выводить ли  прогноз погоды
+             print_weather_predict=True, len_predict_days=3, amount_available_context=3, # Выводить ли  прогноз погоды
              use_callbacks=False, callbacks_min_delta=10, callbacks_patience=3, # Параметры callbacks
-             shift_dataset=True, start_with_dataset_offset=0, # Смещаем данные на 1 час каждый цикл
+             shift_dataset_every_cycle=True, start_with_dataset_offset=0, # Смещаем данные на 1 час каждый цикл
                      # (т.е. после первого смещения ИИшка должна предсказывать на 2 часа вперёд, потом на 3...)
              ):
     """Обучение"""
@@ -170,7 +175,7 @@ def train_ai(start_on=-1, finish_on=99, # Начинаем с номера по�
 
     # Циклы обучения
     for learning_cycle in range(start_on, finish_on):
-        print(f">>> Learning the {SAVE_NAME(learning_cycle)}\t\t\tСмещение данных: {num_dataset_offset} ч")
+        print(f">>> Learning the {SAVE_NAME(learning_cycle)}\t\t\tПредсказывает на: {num_dataset_offset} ч вперёд")
         ai.fit(train_data, train_data_answer,
                epochs=epochs, batch_size=batch_size,
                verbose=verbose, shuffle=False, callbacks=callbacks)
@@ -179,9 +184,9 @@ def train_ai(start_on=-1, finish_on=99, # Начинаем с номера по�
 
         # Сохраняем
         if save_every_learning_cycle:
-            print(f">>> Saving the {SAVE_NAME(learning_cycle)}", end="\t\t")
+            print(f">>> Saving the {SAVE_NAME(learning_cycle)}  (Ignore the WARNING)", end="\t\t")
             ai.save(save_path(SAVE_NAME(learning_cycle)))
-            print("Done (Ignore the WARNING)\n")
+            print("Done\n")
 
 
         # Выводим данные и сравниваем
@@ -189,11 +194,11 @@ def train_ai(start_on=-1, finish_on=99, # Начинаем с номера по�
             # Используем train_data если test_data нет
             WD.print_ai_answers(ai, test_data if len(test_data)>0 else train_data, len_prints_ai_answers)
         if print_weather_predict:
-            WD.print_weather_predict(ai, len_predict_days)
+            WD.print_weather_predict(ai, len_predict_days, amount_available_context)
 
 
         # Создаём смещение данных на 1 час
-        if shift_dataset:
+        if shift_dataset_every_cycle:
             num_dataset_offset += 1
             train_data = train_data[: -1]
             train_data_answer = train_data_answer[1:]
@@ -205,10 +210,11 @@ def train_ai(start_on=-1, finish_on=99, # Начинаем с номера по�
 """Скрипт"""
 if __name__ == "__main__":
     what_device_use("gpu")
-    ai_name("AI_v4")
+    ai_name("AI_v4.2")
+    load_data("moscow", len_test_data=0)
 
-    # create_ai(5, 7, 64)
+    # create_ai(5, 5, 256, print_summary=True)
     load_ai(-1, print_summary=True)
 
-    load_data("moscow", len_test_data=0)  # "fresh"
-    train_ai(epochs=1, batch_size=100, verbose=1)
+    train_ai(epochs=1, batch_size=100, verbose=1, start_with_dataset_offset=0,
+             shift_dataset_every_cycle=False, amount_available_context=3)
