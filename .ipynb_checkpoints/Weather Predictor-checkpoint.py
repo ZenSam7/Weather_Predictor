@@ -216,6 +216,6 @@ if __name__ == "__main__":
     # create_ai(5, 5, 128, print_summary=True)
     load_ai(-1, print_summary=True)
 
-    WD.print_weather_predict(ai, 4)
+    WD.print_weather_predict(ai, 50)
     # train_ai(epochs=1, batch_size=500, verbose=1, start_with_dataset_offset=0,
     #          shift_dataset_every_cycle=False, amount_available_context=3)

@@ -425,27 +425,30 @@ def print_ai_answers(ai, real_data, batch_size):
 
 
 
-def print_weather_predict(ai, len_predict_days=3, amount_available_context=4):
+def print_weather_predict(ai, len_predict_days=3):
     print(f"Prediction for the next {len_predict_days} days:\t\t\t",
           f"(Temperature, Pressure, Humidity, Cloud, Raininess)")
 
     # Самое последнее - самое свежее
     # Также сразу подаём только amount_available_context данных для прогноза
     fresh_data = np.reshape(np.array(get_fresh_data(len_predict_days * 24)),
-                            (len_predict_days * 24, 8))[::-1][:amount_available_context]
+                            (len_predict_days * 24, 8))[::-1]
     times = fresh_data[:, :3].tolist()
     predicts_history = fresh_data[:, 3:].tolist()
 
 
     for _ in range(0, len_predict_days*24):
         # Делаем прогноз по всей истории, а потом отбираем один прогноз, относящееся к последней записи
-        preds_on_preds = ai.predict(np.array( [[t + p] for t, p in zip(times, predicts_history)] ), verbose=False)
-        ai_ans = np.reshape(np.array(preds_on_preds)[:, -1], (5))
+        # preds_on_preds = ai.predict(np.array( [[t + p] for t, p in zip(times, predicts_history)] ), verbose=False)
+        # ai_ans = np.reshape(np.array(preds_on_preds)[:, -1], (5))
+        preds_on_preds = ai.predict(np.array([[times[-1] + predicts_history[-1]]]), verbose=False)
+        ai_ans = np.reshape(np.array(preds_on_preds), (5))
         ai_ans = normalize(ai_ans, True)
 
-        predicts_history.append( (ai_ans + np.array(predicts_history[-1])).tolist() )
-        predicts_history = predicts_history[1:]
-
+        # predicts_history.append( (ai_ans + np.array(predicts_history[-1])).tolist() )
+        predicts_history.append( (ai_ans + np.array(predicts_history)).tolist() )
+        # predicts_history = predicts_history[1:]
+        print(predicts_history)
         # Обновляем время
         time = times[-1]
         time[0] += 1/12                          # Увеличиваем часы
