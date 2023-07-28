@@ -18,6 +18,7 @@ from keras.layers import (
 import tensorflow as tf
 
 tf.config.run_functions_eagerly(True)
+tf.data.experimental.enable_debug_mode()
 
 # Убираем предупреждения
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -141,17 +142,16 @@ def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32, print_summary=
     cloud = Dense(1, activation="tanh", name="cloud")(Architecture().get_ai())
     rain = Dense(1, activation="tanh", name="rain")(Architecture().get_ai())
 
-    # ВРОДЕ БЫ не надо компилировать модель когда создаёшь свою функцию обучения
-    # (на счёт keras.Model я не знаю, убирать или нет но оно вроде "собирает" модель воедино)
     ai = keras.Model(
         input_layer,
         [temperature, pressure, humidity, cloud, rain],
         name="Weather_Predictor",
     )
 
+    # ВРОДЕ БЫ не надо компилировать модель когда создаёшь свою функцию обучения
     # ai.compile(optimizer=keras.optimizers.Adam(1e-3), loss="mean_squared_error",
     #            loss_weights={"temp": 100_000, "press": 10_000, "humid": 10_000, "cloud": 10_000, "rain": 100_000},)
-    #            # Отдаём приоритет температуре и осадкам, и увеличиваем ошибки (иначе они будут ≈0)
+    # Отдаём приоритет температуре и осадкам, и увеличиваем ошибки (иначе они будут ≈0)
 
     if print_summary:
         ai.summary()
@@ -159,21 +159,20 @@ def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32, print_summary=
 
 
 def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ ИИШКУ ПРЕДСКАЗВАТЬ СЛЕДУЮЩИЙ ЧАС
-    start_on=-1,
-    finish_on=99,  # Начинаем с номера последнего сохранения до finish_on
-    epochs=3,
-    batch_size=100,
-    verbose=2,  # Параметры fit()
-    print_ai_answers=True,
-    len_prints_ai_answers=100,  # Выводить данные, или нет
-    print_weather_predict=True,
-    len_predict_days=3,  # Выводить ли  прогноз погоды
-    use_callbacks=False,
-    callbacks_min_delta=10,
-    callbacks_patience=3,  # Параметры callbacks
-    # Смещаем данные на 1 час каждый цикл
-    shift_dataset_every_cycle=True,
-    start_with_dataset_offset=0,  # Смещаем данные на 1 час каждый цикл
+        start_on=-1,
+        finish_on=99,  # Начинаем с номера последнего сохранения до finish_on
+        epochs=3,
+        batch_size=100,
+        verbose=2,  # Параметры fit()
+        print_ai_answers=True,
+        len_prints_ai_answers=100,  # Выводить данные, или нет
+        print_weather_predict=True,
+        len_predict_days=3,  # Выводить ли  прогноз погоды
+        use_callbacks=False,
+        callbacks_min_delta=10,
+        callbacks_patience=3,  # Параметры callbacks
+        shift_dataset_every_cycle=True,
+        start_with_dataset_offset=0,  # Смещаем данные на 1 час каждый цикл
 ):
     """Это просто большая обёртка вокруг функции обучения"""
     global train_data, train_data_answer
@@ -250,8 +249,9 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
             train_data_answer = train_data_answer[1:]
 
 
+# class CustomModel(keras.Model):
 @tf.function
-def train_step(Times, Data_batch, next_batch_of_data, len_predict):
+def train_step(Times, Data_batch, len_predict):
     """Делаем свою функцию fit()
     (Нужна она чтобы обучать ИИшку составлять прогноз, на основе своих данных)"""
     global loss_func, optimizer
@@ -261,24 +261,20 @@ def train_step(Times, Data_batch, next_batch_of_data, len_predict):
 
     with tf.GradientTape() as tape:
         # Составляем прогноз длиной len_predict
+        ai_predicts = tf.expand_dims(tf.expand_dims(data_batch[0], axis=0), axis=0)
+
         for _ in range(len_predict):
-            # Заполняем joind_data первым значением, а потом к нему добавляем
-            # другие
-            joind_data = tf.expand_dims(
-                tf.expand_dims(tf.concat([times[0], data_batch[0]], 0), axis=0), axis=0
+            joind_vector = tf.concat([times[-1], ai_predicts[-1][0]], 0)
+            joind_vector = tf.expand_dims(
+                tf.expand_dims(joind_vector, axis=0), axis=0
             )
-            for i in range(1, data_batch.shape[0]):
-                joind_vector = tf.concat([times[i], data_batch[i]], 0)
-                joind_vector = tf.expand_dims(
-                    tf.expand_dims(joind_vector, axis=0), axis=0
-                )
-                joind_data = tf.concat([joind_data, joind_vector], axis=0)
 
             # Записываем предсказание ИИшки на следующий час
-            ai_ans = [ai(joind_data, training=True)[i][-1][0] for i in range(5)]
-            ai_ans = tf.cast(tf.reshape(ai_ans, [1, -1]), tf.float64)
-
-            data_batch = tf.concat([data_batch[1:], ai_ans], 0)  # Смещаем прогноз
+            ai_ans = [ai(joind_vector, training=True)[i][0] for i in range(5)]
+            ai_ans = tf.expand_dims(tf.cast(
+                tf.reshape(ai_ans, [1, -1]),
+                tf.float64), axis=0)
+            ai_predicts = tf.concat([ai_predicts, ai_ans], axis=0)
 
             # Обновляем время
             time = times[-1]
@@ -286,9 +282,6 @@ def train_step(Times, Data_batch, next_batch_of_data, len_predict):
             to_add = tf.constant([1 / 12, 1 / 15.5, 1 / 6], dtype=tf.float64)
             where_to_add = tf.cast([True, time[0] > 1, time[1] > 1], tf.float64)
             time += to_add * where_to_add
-            # time[0] += 1 / 12                          # Увеличиваем часы
-            # time[1] += 1 / 15.5 if time[0] > 1 else 0  # Увеличиваем день
-            # time[2] += 1 / 6 if time[1] > 1 else 0     # Увеличиваем месяц
 
             # Следим, чтобы зачения не выходили за границы
             overflow = tf.cast(time > 1, tf.float64)
@@ -301,15 +294,15 @@ def train_step(Times, Data_batch, next_batch_of_data, len_predict):
             )  # Смещаем прогноз
 
         # ИИшка должна предсказать будущую погоду
-        real_ans = next_batch_of_data[:len_predict]
-        ai_pred = data_batch[:len_predict]
+        real_ans = data_batch[1: len_predict + 1]
+        ai_pred = ai_predicts[1: len_predict + 1]
         loss = tf.keras.losses.mean_squared_error(real_ans, ai_pred)
 
         # Состовляем градиенты
         gradients = tape.gradient(loss, ai.trainable_variables)
 
         # Изменяем веса
-        (keras.optimizers.Adam(1e-4)).apply_gradients(
+        (keras.optimizers.Adam(1e-3)).apply_gradients(
             zip(gradients, ai.trainable_variables)
         )
 
@@ -317,11 +310,12 @@ def train_step(Times, Data_batch, next_batch_of_data, len_predict):
 
 
 def train_make_predict(
-    batch_size=100, amount_batches=10, len_predict=24, start_on=-1, finish_on=99
+        batch_size=100, amount_batches=10, len_predict=24, start_on=-1, finish_on=99
 ):
     """Эта функция нужна чтобы обучить ИИшку состовлять прогноз"""
 
-    # assert len_predict > batch_size, "len_predict sould be <= batch_size"
+    if batch_size <= len_predict:
+        raise "len_predict sould be < batch_size"
 
     # Продолжаем с последнего сохранения если start_on == -1 (или создаём новое)
     if start_on == -1:
@@ -333,7 +327,7 @@ def train_make_predict(
                         for save_name in os.listdir("Saves Weather Prophet")
                     ]
                 )[-1].split("~")[-1]
-            )
+            ) + 1
         except BaseException:
             start_on = 0
 
@@ -344,20 +338,19 @@ def train_make_predict(
 
         # Разделяем train_data на батчи (В посленем батче — оставшиеся данные)
         batchs_data = [
-            train_data[i : i + batch_size]
-            for i in range(0, len(train_data), batch_size)
-        ][:-1]
+                          train_data[i: i + batch_size]
+                          for i in range(0, len(train_data), batch_size)
+                      ][:-1]
         # Берём рандомный промежуток батчей
         rand = np.random.randint(len(batchs_data) - amount_batches)
-        batchs_data = batchs_data[:-1][rand : rand + amount_batches]
+        batchs_data = batchs_data[:-1][rand: rand + amount_batches]
 
-        for b in tqdm(range(len(batchs_data) - 1), desc=f"Epoch {learning_cycle}/{finish_on}"):
+        for b in tqdm(range(len(batchs_data)), desc=f"Epoch {learning_cycle}/{finish_on}"):
             # Variable внутри @tf.function нельзя ставить
             times = tf.Variable(batchs_data[b][:, 0, :3], tf.float64)
             data_batch = tf.Variable(batchs_data[b][:, 0, 3:], tf.float64)
-            next_batch = tf.Variable(batchs_data[b + 1][:, 0, 3:], tf.float64)
 
-            losses.append(train_step(times, data_batch, next_batch, len_predict))
+            losses.append(train_step(times, data_batch, len_predict))
 
         print(
             f"Loss: {round(np.mean(losses), 5)} (mean); {round(np.min(losses), 5)} min\n"
@@ -367,6 +360,7 @@ def train_make_predict(
         print(f">>> Saving the {SAVE_NAME(learning_cycle)}  (Ignore the WARNING)", end="\t\t")
         ai.save(save_path(SAVE_NAME(learning_cycle)))
         print("Done\n")
+        WD.print_weather_predict(ai, 1)
 
 
 if __name__ == "__main__":
@@ -374,9 +368,10 @@ if __name__ == "__main__":
     ai_name("AI_v4.2")
     load_data("moscow")
 
-    # create_ai(5, 5, 128, print_summary=True)
-    load_ai(-1, print_summary=False)
+    create_ai(5, 5, 64, print_summary=True)
+    # load_ai(-1, print_summary=False)
 
-    train_make_predict(100, 10, len_predict=24)
+    train_make_predict(50, 30, len_predict=24)
+    # Сделать нормальную нормализацию delta
 
     WD.print_weather_predict(ai, 1)
