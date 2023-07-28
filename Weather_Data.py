@@ -85,19 +85,19 @@ def normalize(x, convert_back=False):
             MAX_DATA = float(save[2][4:])
 
         result = (x + 1) / 2  # от 0 до 1
-        result = result * (MAX_DATA - MIN_DATA) + MIN_DATA
+        result = result * MAX_DATA + MIN_DATA
         return result
 
     # Сохраняем информацию о том, как потом нормализовать данные обратно
     os.remove("Datasets/Info_About_Last_Dataset.txt")
     with open("Datasets/Info_About_Last_Dataset.txt", "w+") as save:
         save.write(
-            f"Data set data for last saved AI\n" f"MIN={np.min(x)}\n" f"MAX={np.max(x)}"
+            f"Data set data for last saved AI\n" f"MIN={np.min(x)}\n" f"MAX={np.max(x - np.min(x))}"
         )
 
     # Сначала нормализуем от 0 до 1
     result = x - np.min(x)
-    if np.max(x) != 0.0:
+    if np.max(result) != 0.0:
         result = result / np.max(result)
 
     # Потом от -1 до 1

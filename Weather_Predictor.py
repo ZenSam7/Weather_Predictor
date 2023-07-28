@@ -17,7 +17,6 @@ from keras.layers import (
 )
 import tensorflow as tf
 
-tf.config.run_functions_eagerly(True)
 tf.data.experimental.enable_debug_mode()
 
 # Убираем предупреждения
@@ -61,7 +60,8 @@ def load_data(name_db="moscow", how_many_context_days=10):
     DATA_in = np.array(DATA_in).reshape((len(DATA_out), 1, 8))
 
     # Остаточное обучение + нормализуем от -1 до 1 (а не от -0.01 до 0.01)
-    DATA_out = WD.normalize(DATA_out - DATA_in)
+    DATA_out = DATA_out - DATA_in
+    DATA_out = WD.normalize(DATA_out)
     DATA_out = DATA_out[:, :, 3:]  # ИИшке не надо предсказывать время
 
     train_data = DATA_in
@@ -105,7 +105,7 @@ def load_ai(loading_with_learning_cycle=-1, print_summary=False):
 
 def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32, print_summary=True):
     """Создаём ИИшки"""
-    global ai, loss_func, optimizer
+    global ai
     # Суть в том, чтобы расперелить задачи по предсказыванию между разными нейронками
     # Т.к. одна нейросеть очень плохо предскаывает одновременно все факторы
 
@@ -115,8 +115,6 @@ def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32, print_summary=
     class Architecture:
         def get_ai(self):
             num_conv_neurons = 8
-            # Добавляем нормализаци, т.к. некоторый значения больше склонны бать с одной стороны (если взять среднее)
-            # (например температура чаще положительная, чем отрицательная (в москве))
             list_layers = []
 
             # Добавляем Conv1D
@@ -127,11 +125,11 @@ def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32, print_summary=
             # Добавляем остальные слои
             for i in range(num_ai_layers):
                 if i % 2 == 0:
+                    list_layers.append(Dense(num_neurons, activation="relu"))
+                else:
                     list_layers.append(
                         LSTM(num_neurons, return_sequences=True, unroll=True)
                     )
-                else:
-                    list_layers.append(Dense(num_neurons, activation="relu"))
 
             return Sequential(list_layers)(input_layer)
 
@@ -148,10 +146,9 @@ def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32, print_summary=
         name="Weather_Predictor",
     )
 
-    # ВРОДЕ БЫ не надо компилировать модель когда создаёшь свою функцию обучения
-    # ai.compile(optimizer=keras.optimizers.Adam(1e-3), loss="mean_squared_error",
-    #            loss_weights={"temp": 100_000, "press": 10_000, "humid": 10_000, "cloud": 10_000, "rain": 100_000},)
-    # Отдаём приоритет температуре и осадкам, и увеличиваем ошибки (иначе они будут ≈0)
+    ai.compile(optimizer=keras.optimizers.Adam(1e-3), loss="mean_squared_error",
+               loss_weights={"temp": 100_000, "press": 10_000, "humid": 10_000, "cloud": 10_000, "rain": 100_000},)
+               # Отдаём приоритет температуре и осадкам, и увеличиваем ошибки (иначе они будут ≈0)
 
     if print_summary:
         ai.summary()
@@ -166,8 +163,8 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
         verbose=2,  # Параметры fit()
         print_ai_answers=True,
         len_prints_ai_answers=100,  # Выводить данные, или нет
-        print_weather_predict=True,
-        len_predict_days=3,  # Выводить ли  прогноз погоды
+        print_weather_predict=True,  # Выводить ли прогноз погоды
+        len_predict_days=1,
         use_callbacks=False,
         callbacks_min_delta=10,
         callbacks_patience=3,  # Параметры callbacks
@@ -207,7 +204,7 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
                         for save_name in os.listdir("Saves Weather Prophet")
                     ]
                 )[-1].split("~")[-1]
-            )
+            ) +1
         except BaseException:
             start_on = 0
 
@@ -249,7 +246,6 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
             train_data_answer = train_data_answer[1:]
 
 
-# class CustomModel(keras.Model):
 @tf.function
 def train_step(Times, Data_batch, len_predict):
     """Делаем свою функцию fit()
@@ -302,7 +298,7 @@ def train_step(Times, Data_batch, len_predict):
         gradients = tape.gradient(loss, ai.trainable_variables)
 
         # Изменяем веса
-        (keras.optimizers.Adam(1e-3)).apply_gradients(
+        (keras.optimizers.Adam(2e-4)).apply_gradients(
             zip(gradients, ai.trainable_variables)
         )
 
@@ -313,6 +309,7 @@ def train_make_predict(
         batch_size=100, amount_batches=10, len_predict=24, start_on=-1, finish_on=99
 ):
     """Эта функция нужна чтобы обучить ИИшку состовлять прогноз"""
+    tf.config.run_functions_eagerly(True)
 
     if batch_size <= len_predict:
         raise "len_predict sould be < batch_size"
@@ -346,7 +343,6 @@ def train_make_predict(
         batchs_data = batchs_data[:-1][rand: rand + amount_batches]
 
         for b in tqdm(range(len(batchs_data)), desc=f"Epoch {learning_cycle}/{finish_on}"):
-            # Variable внутри @tf.function нельзя ставить
             times = tf.Variable(batchs_data[b][:, 0, :3], tf.float64)
             data_batch = tf.Variable(batchs_data[b][:, 0, 3:], tf.float64)
 
@@ -360,6 +356,7 @@ def train_make_predict(
         print(f">>> Saving the {SAVE_NAME(learning_cycle)}  (Ignore the WARNING)", end="\t\t")
         ai.save(save_path(SAVE_NAME(learning_cycle)))
         print("Done\n")
+
         WD.print_weather_predict(ai, 1)
 
 
@@ -368,10 +365,8 @@ if __name__ == "__main__":
     ai_name("AI_v4.2")
     load_data("moscow")
 
-    create_ai(5, 5, 64, print_summary=True)
-    # load_ai(-1, print_summary=False)
+    # create_ai(5, 5, 64, print_summary=True)
+    load_ai(-1, print_summary=False)
 
-    train_make_predict(50, 30, len_predict=24)
-    # Сделать нормальную нормализацию delta
-
-    WD.print_weather_predict(ai, 1)
+    start_train(-1, 7, epochs=10, batch_size=100, verbose=1)
+    train_make_predict(50, 20, len_predict=24)
