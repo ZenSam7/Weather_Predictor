@@ -1,6 +1,39 @@
 <component name="ProjectCodeStyleConfiguration">
   <code_scheme name="Project" version="173">
     <option name="RIGHT_MARGIN" value="998" />
+    <DB2CodeStyleSettings version="6">
+      <option name="DISABLE_FORMATTING" value="true" />
+    </DB2CodeStyleSettings>
+    <DerbyCodeStyleSettings version="6">
+      <option name="DISABLE_FORMATTING" value="true" />
+    </DerbyCodeStyleSettings>
+    <H2CodeStyleSettings version="6">
+      <option name="DISABLE_FORMATTING" value="true" />
+    </H2CodeStyleSettings>
+    <HSQLCodeStyleSettings version="6">
+      <option name="DISABLE_FORMATTING" value="true" />
+    </HSQLCodeStyleSettings>
+    <IsoSqlCodeStyleSettings version="6">
+      <option name="DISABLE_FORMATTING" value="true" />
+    </IsoSqlCodeStyleSettings>
+    <MSSQLCodeStyleSettings version="6">
+      <option name="DISABLE_FORMATTING" value="true" />
+    </MSSQLCodeStyleSettings>
+    <MySQLCodeStyleSettings version="6">
+      <option name="DISABLE_FORMATTING" value="true" />
+    </MySQLCodeStyleSettings>
+    <OracleCodeStyleSettings version="6">
+      <option name="DISABLE_FORMATTING" value="true" />
+    </OracleCodeStyleSettings>
+    <PostgresCodeStyleSettings version="6">
+      <option name="DISABLE_FORMATTING" value="true" />
+    </PostgresCodeStyleSettings>
+    <SQLiteCodeStyleSettings version="6">
+      <option name="DISABLE_FORMATTING" value="true" />
+    </SQLiteCodeStyleSettings>
+    <SybaseCodeStyleSettings version="6">
+      <option name="DISABLE_FORMATTING" value="true" />
+    </SybaseCodeStyleSettings>
     <codeStyleSettings language="Python">
       <option name="RIGHT_MARGIN" value="998" />
     </codeStyleSettings>

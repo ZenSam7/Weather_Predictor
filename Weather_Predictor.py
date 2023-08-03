@@ -34,11 +34,11 @@ def what_device_use(device="gpu"):
         tf.config.set_visible_devices([], "GPU")
 
 
-def load_data(name_db="moscow", how_many_context_days=10):
+def load_data(name_db="moscow", how_many_context_days=20):
     """Загружаем данные"""
     global train_data, train_data_answer
 
-    # В WD.get_moscow_data     477_603 записей      (все данные идут с шагом в 1 часа)
+    # В WD.get_moscow_data     167_217 записей      (все данные идут с шагом в 1 часа)
     # В WD.get_fresh_data        1_455 записей      (данные за последние 60
     # дней, идут с шагом в 1 час)
 
@@ -59,10 +59,10 @@ def load_data(name_db="moscow", how_many_context_days=10):
     DATA_out = np.array(DATA_out).reshape((len(DATA_out), 1, 8))
     DATA_in = np.array(DATA_in).reshape((len(DATA_out), 1, 8))
 
-    # Остаточное обучение + нормализуем от -1 до 1 (а не от -0.01 до 0.01)
+    # Остаточное обучение
     DATA_out = DATA_out - DATA_in
-    DATA_out = WD.normalize(DATA_out)
-    DATA_out = DATA_out[:, :, 3:]  # ИИшке не надо предсказывать время
+    # ИИшке не надо предсказывать время + нормализуем от -1 до 1 (а не от -0.1 до 0.1)
+    DATA_out = WD.normalize(DATA_out[:, :, 3:])
 
     train_data = DATA_in
     train_data_answer = DATA_out
@@ -79,13 +79,13 @@ def ai_name(name):
         return f"{name}~{num}"
 
 
-def load_ai(loading_with_learning_cycle=-1, print_summary=False):
+def load_ai(loading_with=-1, print_summary=False):
     """ЗАГРУЖАЕМСЯ"""
     global ai
 
     # Вычисляем номер последнего сохранения с текущем именем
-    if loading_with_learning_cycle == -1:
-        loading_with_learning_cycle = int(
+    if loading_with == -1:
+        loading_with = int(
             sorted(
                 [
                     save_name if SAVE_NAME(0)[:-2] in save_name else None
@@ -94,8 +94,8 @@ def load_ai(loading_with_learning_cycle=-1, print_summary=False):
             )[-1].split("~")[-1]
         )
 
-    print(f">>> Loading the {SAVE_NAME(loading_with_learning_cycle)}", end="\t\t")
-    ai = tf.keras.models.load_model(save_path(SAVE_NAME(loading_with_learning_cycle)))
+    print(f">>> Loading the {SAVE_NAME(loading_with)}", end="\t\t")
+    ai = tf.keras.models.load_model(save_path(SAVE_NAME(loading_with)))
     print("Done\n")
 
     if print_summary:
@@ -247,7 +247,7 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
 
 
 @tf.function
-def train_step(Times, Data_batch, len_predict):
+def train_step(Times, Data_batch, len_predict, increased_error_factor):
     """Делаем свою функцию fit()
     (Нужна она чтобы обучать ИИшку составлять прогноз, на основе своих данных)"""
     global loss_func, optimizer
@@ -289,16 +289,16 @@ def train_step(Times, Data_batch, len_predict):
                 [times[1:], tf.reshape(time, [1, -1])], 0
             )  # Смещаем прогноз
 
-        # ИИшка должна предсказать будущую погоду
-        real_ans = data_batch[1: len_predict + 1]
-        ai_pred = ai_predicts[1: len_predict + 1]
+        # ИИшка должна предсказать только будущую погоду
+        real_ans = data_batch[1: len_predict + 1] *increased_error_factor
+        ai_pred = ai_predicts[1: len_predict + 1] *increased_error_factor
         loss = tf.keras.losses.mean_squared_error(real_ans, ai_pred)
 
         # Состовляем градиенты
         gradients = tape.gradient(loss, ai.trainable_variables)
 
         # Изменяем веса
-        (keras.optimizers.Adam(2e-4)).apply_gradients(
+        (keras.optimizers.Adam(5e-4)).apply_gradients(
             zip(gradients, ai.trainable_variables)
         )
 
@@ -306,7 +306,8 @@ def train_step(Times, Data_batch, len_predict):
 
 
 def train_make_predict(
-        batch_size=100, amount_batches=10, len_predict=24, start_on=-1, finish_on=99
+        batch_size=100, amount_batches=10, len_predict=24, start_on=-1, finish_on=99,
+        increased_error_factor=100
 ):
     """Эта функция нужна чтобы обучить ИИшку состовлять прогноз"""
     tf.config.run_functions_eagerly(True)
@@ -346,7 +347,9 @@ def train_make_predict(
             times = tf.Variable(batchs_data[b][:, 0, :3], tf.float64)
             data_batch = tf.Variable(batchs_data[b][:, 0, 3:], tf.float64)
 
-            losses.append(train_step(times, data_batch, len_predict))
+            losses.append(
+                train_step(times, data_batch, len_predict, increased_error_factor)
+            )
 
         print(
             f"Loss: {round(np.mean(losses), 5)} (mean); {round(np.min(losses), 5)} min\n"
@@ -362,11 +365,12 @@ def train_make_predict(
 
 if __name__ == "__main__":
     what_device_use("cpu")
-    ai_name("AI_v4.2")
+    ai_name("AI_v5.1")
     load_data("moscow")
 
-    # create_ai(5, 5, 64, print_summary=True)
-    load_ai(-1, print_summary=False)
+    # create_ai(4, 5, 64, print_summary=True)
+    load_ai(print_summary=False)
 
-    start_train(-1, 7, epochs=10, batch_size=100, verbose=1)
-    train_make_predict(50, 20, len_predict=24)
+    start_train(-1, 10, epochs=2, batch_size=100, verbose=1,
+                print_weather_predict=False, len_prints_ai_answers=50)
+    train_make_predict(50, 10, len_predict=24)

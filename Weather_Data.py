@@ -211,39 +211,12 @@ def get_moscow_data():
 
             DATA.append(processed_data)
 
-    # Заполняем промежуточными значеними (т.к. у нас данные идут с шагом в 3
-    # часа)
-    DATA = np.array(DATA)
-    conv_DATA = []
-    for i in range(len(DATA) - 1):
-        for conved in np.linspace(DATA[i], DATA[i + 1], num=4).tolist()[1:]:
-            conv_DATA.append(conved)
-
-    # Часы и числа дня заполняем отдельно
-    time_h, time_d, time_m = DATA[0, 0], DATA[0, 1], DATA[0, 2]  # Начинаем с начала
-    ind = 0  # Надо, чтобы одновременно заполнять DATA
-    while ind != len(DATA) - 1:
-        time_h += 1 / 12
-        if time_h > 1:
-            time_h = -1
-
-        time_d += 1 / 15.5 if time_h == -1 else 0
-        if time_d > 1:
-            time_d = -1
-
-        time_m += 1 / 6 if time_d == -1 else 0
-        if time_m > 1:
-            time_m = -1
-
-        DATA[ind, 0], DATA[ind, 1], DATA[ind, 2] = time_h, time_d, time_m
-        ind += 1
-
-    return conv_DATA
+    return DATA
 
 
 def get_fresh_data(how_many_context_days):
     now_date = dt.datetime.today()
-    last_date = now_date - dt.timedelta(days=how_many_context_days // 24 + 1)
+    last_date = now_date - dt.timedelta(days=how_many_context_days + 1)
 
     now_date = now_date.strftime("%d.%m.%Y")
     last_date = last_date.strftime("%d.%m.%Y")
@@ -349,34 +322,7 @@ def get_fresh_data(how_many_context_days):
 
         DATA.append(processed_data)
 
-    # Заполняем промежуточными значеними (т.к. у нас данные идут с шагом в 3
-    # часа)
-    DATA = np.array(DATA)
-    conv_DATA = []
-    for i in range(len(DATA) - 1):
-        for conved in np.linspace(DATA[i], DATA[i + 1], num=4).tolist()[1:]:
-            conv_DATA.append(conved)
-
-    # Часы и числа дня заполняем отдельно
-    time_h, time_d, time_m = DATA[0, 0], DATA[0, 1], DATA[0, 2]  # Начинаем с начала
-    ind = 0  # Надо, чтобы одновременно заполнять DATA
-    while ind != len(DATA) - 1:
-        time_h += 1 / 12
-        if time_h > 1:
-            time_h = -1
-
-        time_d += 1 / 15.5 if time_h == -1 else 0
-        if time_d > 1:
-            time_d = -1
-
-        time_m += 1 / 6 if time_d == -1 else 0
-        if time_m > 1:
-            time_m = -1
-
-        DATA[ind, 0], DATA[ind, 1], DATA[ind, 2] = time_h, time_d, time_m
-        ind += 1
-
-    return conv_DATA[:how_many_context_days]
+    return DATA[:how_many_context_days *24//3]
 
 
 def print_ai_answers(ai, real_data, batch_size):
@@ -401,8 +347,7 @@ def print_ai_answers(ai, real_data, batch_size):
         ai_ans_list = normalize(ai_ans_list, True)
         ai_ans_list = (ai_ans_list + real_matrix[b][3:]).tolist()
 
-        # Конвертируем данные из промежутка [-1; 1] в нормальную физическую
-        # величину
+        # Конвертируем данные из промежутка [-1; 1] в нормальную физическую  величину
         real_data_list = [
             norm_hours(real_data_list[0], True),
             norm_day(real_data_list[1], True),
@@ -411,8 +356,7 @@ def print_ai_answers(ai, real_data, batch_size):
 
         ai_ans_list = conv_ai_ans_for_human(ai_ans_list)
 
-        # В качестве ошибки просто добавляем разность между ответом ИИ и
-        # реальностью
+        # В качестве ошибки просто добавляем разность между ответом ИИ и реальностью
         errors = np.array(np.abs(np.array(real_data_list[3:]) - np.array(ai_ans_list)))
         total_errors.append(errors)
 
@@ -457,12 +401,12 @@ def print_weather_predict(ai, len_predict_days=3):
     # Самое последнее - самое свежее
     # Также сразу подаём только amount_available_context данных для прогноза
     fresh_data = np.reshape(
-        np.array(get_fresh_data(len_predict_days * 24)), (len_predict_days * 24, 8)
+        np.array(get_fresh_data(len_predict_days)), (len_predict_days * 24//3, 8)
     )[::-1]
     times = fresh_data[:, :3].tolist()
     predicts_history = fresh_data[:, 3:].tolist()
 
-    for _ in range(0, len_predict_days * 24):
+    for _ in range(len_predict_days * 24//3):
         # Делаем прогноз по всей истории, а потом отбираем один прогноз, относящееся к последней записи
         preds_on_preds = ai.predict(
             np.array([[t + p] for t, p in zip(times, predicts_history)]), verbose=False
@@ -475,7 +419,7 @@ def print_weather_predict(ai, len_predict_days=3):
 
         # Обновляем время
         time = times[-1]
-        time[0] += 1 / 12  # Увеличиваем часы
+        time[0] += 3 / 12  # Увеличиваем часы
         time[1] += 1 / 15.5 if time[0] > 1 else 0  # Увеличиваем день
         time[2] += 1 / 6 if time[1] > 1 else 0  # Увеличиваем месяц
 
