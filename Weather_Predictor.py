@@ -14,6 +14,7 @@ from keras.layers import (
     BatchNormalization,
     Conv1D,
     Dropout,
+    Input,
 )
 import tensorflow as tf
 
@@ -39,12 +40,10 @@ def load_data(name_db="moscow", how_many_context_days=20):
     global train_data, train_data_answer
 
     # В WD.get_moscow_data     167_217 записей      (все данные идут с шагом в 1 часа)
-    # В WD.get_fresh_data        1_455 записей      (данные за последние 60
-    # дней, идут с шагом в 1 час)
+    # В WD.get_fresh_data        1_455 записей      (данные за последние 60 дней, идут с шагом в 1 час)
 
-    if name_db == "moscow":
-        DATA_out = WD.get_moscow_data()
-    elif name_db == "fresh":
+    DATA_out = WD.get_moscow_data()
+    if name_db == "fresh":
         DATA_out = WD.get_fresh_data(how_many_context_days)
     print(">>> Dataset loaded\n")
 
@@ -61,7 +60,7 @@ def load_data(name_db="moscow", how_many_context_days=20):
 
     # Остаточное обучение
     DATA_out = DATA_out - DATA_in
-    # ИИшке не надо предсказывать время + нормализуем от -1 до 1 (а не от -0.1 до 0.1)
+    # ИИшке не надо предсказывать время + нормализуем от -1 до 1
     DATA_out = WD.normalize(DATA_out[:, :, 3:])
 
     train_data = DATA_in
@@ -103,14 +102,12 @@ def load_ai(loading_with=-1, print_summary=False):
         print()
 
 
-def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32, print_summary=True):
+def create_ai(num_layers_conv=3, num_main_layers=5, num_neurons=32, batch_size=100, print_summary=True):
     """Создаём ИИшки"""
     global ai
     # Суть в том, чтобы расперелить задачи по предсказыванию между разными нейронками
     # Т.к. одна нейросеть очень плохо предскаывает одновременно все факторы
-
-    # У всех нейронок одна архитектура и один вход
-    input_layer = keras.Input((1, 8))
+    general_input = Input(batch_shape=(batch_size, 1, 8))
 
     class Architecture:
         def get_ai(self):
@@ -122,16 +119,17 @@ def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32, print_summary=
                 list_layers.append(Conv1D(num_conv_neurons, 8, padding="same"))
                 num_conv_neurons *= 2
 
-            # Добавляем остальные слои
-            for i in range(num_ai_layers):
+            # Добавляем основные слои (чередуем Dense и LSTM)
+            for i in range(num_main_layers):
                 if i % 2 == 0:
                     list_layers.append(Dense(num_neurons, activation="relu"))
                 else:
-                    list_layers.append(
-                        LSTM(num_neurons, return_sequences=True, unroll=True)
-                    )
+                    # activation="relu" ?
+                    list_layers.append(LSTM(num_neurons, return_sequences=True, unroll=False, stateful=True))
 
-            return Sequential(list_layers)(input_layer)
+
+            return Sequential(list_layers)(general_input)
+
 
     # Создаём 5 полностью независимые нейронки
     temperature = Dense(1, activation="tanh", name="temp")(Architecture().get_ai())
@@ -141,14 +139,14 @@ def create_ai(num_layers_conv=3, num_ai_layers=5, num_neurons=32, print_summary=
     rain = Dense(1, activation="tanh", name="rain")(Architecture().get_ai())
 
     ai = keras.Model(
-        input_layer,
+        general_input,
         [temperature, pressure, humidity, cloud, rain],
         name="Weather_Predictor",
     )
 
     ai.compile(optimizer=keras.optimizers.Adam(1e-3), loss="mean_squared_error",
                loss_weights={"temp": 100_000, "press": 10_000, "humid": 10_000, "cloud": 10_000, "rain": 100_000},)
-               # Отдаём приоритет температуре и осадкам, и увеличиваем ошибки (иначе они будут ≈0)
+               # Отдаём приоритет температуре и осадкам, и увеличиваем всем ошибки (иначе они будут ≈0)
 
     if print_summary:
         ai.summary()
@@ -168,18 +166,10 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
         use_callbacks=False,
         callbacks_min_delta=10,
         callbacks_patience=3,  # Параметры callbacks
-        shift_dataset_every_cycle=True,
-        start_with_dataset_offset=0,  # Смещаем данные на 1 час каждый цикл
 ):
     """Это просто большая обёртка вокруг функции обучения"""
     global train_data, train_data_answer
     num_dataset_offset = 1
-
-    # Сдвигаемм наборы данных
-    if start_with_dataset_offset > 0:
-        num_dataset_offset += start_with_dataset_offset
-        train_data = train_data[:-start_with_dataset_offset]
-        train_data_answer = train_data_answer[start_with_dataset_offset:]
 
     callbacks = (
         [
@@ -193,6 +183,10 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
         if use_callbacks
         else None
     )
+
+    # Убираем немного записей, чтобы train_data можно было ровно разделить на batch_size
+    train_data = train_data[: len(train_data) //batch_size *batch_size]
+    train_data_answer = train_data_answer[: len(train_data) //batch_size *batch_size]
 
     # Продолжаем с последнего сохранения если start_on == -1 (или создаём новое)
     if start_on == -1:
@@ -238,12 +232,6 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
             WD.print_ai_answers(ai, train_data, len_prints_ai_answers)
         if print_weather_predict:
             WD.print_weather_predict(ai, len_predict_days)
-
-        # Создаём смещение данных на 1 час
-        if shift_dataset_every_cycle:
-            num_dataset_offset += 1
-            train_data = train_data[:-1]
-            train_data_answer = train_data_answer[1:]
 
 
 @tf.function
@@ -311,6 +299,7 @@ def train_make_predict(
 ):
     """Эта функция нужна чтобы обучить ИИшку состовлять прогноз"""
     tf.config.run_functions_eagerly(True)
+    ai.reset_states() # Очищаем данные, оставшиеся после обучения
 
     if batch_size <= len_predict:
         raise "len_predict sould be < batch_size"
@@ -365,12 +354,15 @@ def train_make_predict(
 
 if __name__ == "__main__":
     what_device_use("cpu")
-    ai_name("AI_v5.1")
+    ai_name("AI_v5.3")
     load_data("moscow")
 
-    # create_ai(4, 5, 64, print_summary=True)
-    load_ai(print_summary=False)
+    batch_size = 100
 
-    start_train(-1, 10, epochs=2, batch_size=100, verbose=1,
+    create_ai(4, 5, 100, batch_size=batch_size, print_summary=True)
+    # load_ai(print_summary=False)
+
+    # WD.print_weather_predict(ai, 7, 3.5)
+    start_train(-1, 5, epochs=3, batch_size=batch_size, verbose=1,
                 print_weather_predict=False, len_prints_ai_answers=50)
     train_make_predict(50, 10, len_predict=24)

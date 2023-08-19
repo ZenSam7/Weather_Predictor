@@ -209,6 +209,10 @@ def get_moscow_data():
             if "силь" in data[5]:
                 processed_data[7] *= 2
 
+            # На всякий случай ограничиваем все значения от -1 до 1 (обрезаем лишнее)
+            for i in range(len(processed_data)):
+                processed_data[i] = clamp(processed_data[i], -1, 1)
+
             DATA.append(processed_data)
 
     return DATA
@@ -216,7 +220,7 @@ def get_moscow_data():
 
 def get_fresh_data(how_many_context_days):
     now_date = dt.datetime.today()
-    last_date = now_date - dt.timedelta(days=how_many_context_days + 1)
+    last_date = now_date - dt.timedelta(days=how_many_context_days //1 + 1)
 
     now_date = now_date.strftime("%d.%m.%Y")
     last_date = last_date.strftime("%d.%m.%Y")
@@ -320,21 +324,27 @@ def get_fresh_data(how_many_context_days):
         if "силь" in data[5]:
             processed_data[7] *= 2
 
+        # На всякий случай ограничиваем все значения от -1 до 1 (обрезаем лишнее)
+        for i in range(len(processed_data)):
+            processed_data[i] = clamp(processed_data[i], -1, 1)
+
         DATA.append(processed_data)
 
-    return DATA[:how_many_context_days *24//3]
+    return DATA[:int(how_many_context_days *24//3)]
 
 
 def print_ai_answers(ai, real_data, batch_size):
     print("\n")
     print("Time\t\t\tReal Data\t\t\t\t\t\t\tAI answer\t\t\t\t\t\t\tErrors ∆")
 
+    ai.reset_states()  # Очищаем данные, оставшиеся от обучения
+
     total_errors = []
 
     # Случайный батч
     rand = np.random.randint(len(real_data) - batch_size)
     real_matrix = np.reshape(
-        np.array([real_data[rand : rand + batch_size]]), (batch_size, 8)
+        np.array([real_data[rand: rand + batch_size]]), (batch_size, 8)
     )
 
     for b in range(1, batch_size):
@@ -392,21 +402,22 @@ def print_ai_answers(ai, real_data, batch_size):
     print("\n")
 
 
-def print_weather_predict(ai, len_predict_days=3):
+def print_weather_predict(ai, len_predict_days=3, context_days=1):
     print(
         f"Prediction for the next {len_predict_days} days:\t\t\t",
         f"(Temperature, Pressure, Humidity, Cloud, Raininess)",
     )
+    ai.reset_states() # Очищаем данные, оставшиеся от обучения
 
     # Самое последнее - самое свежее
     # Также сразу подаём только amount_available_context данных для прогноза
     fresh_data = np.reshape(
-        np.array(get_fresh_data(len_predict_days)), (len_predict_days * 24//3, 8)
+        np.array(get_fresh_data(context_days)), (int(context_days * 24//3), 8)
     )[::-1]
     times = fresh_data[:, :3].tolist()
     predicts_history = fresh_data[:, 3:].tolist()
 
-    for _ in range(len_predict_days * 24//3):
+    for _ in range(int(len_predict_days * 24//3)):
         # Делаем прогноз по всей истории, а потом отбираем один прогноз, относящееся к последней записи
         preds_on_preds = ai.predict(
             np.array([[t + p] for t, p in zip(times, predicts_history)]), verbose=False
