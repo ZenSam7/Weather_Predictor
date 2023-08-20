@@ -333,7 +333,7 @@ def get_fresh_data(how_many_context_days):
     return DATA[:int(how_many_context_days *24//3)]
 
 
-def print_ai_answers(ai, real_data, batch_size):
+def print_ai_answers(ai, real_data, batch_size=32, num_answers=50):
     print("\n")
     print("Time\t\t\tReal Data\t\t\t\t\t\t\tAI answer\t\t\t\t\t\t\tErrors ∆")
 
@@ -341,42 +341,42 @@ def print_ai_answers(ai, real_data, batch_size):
 
     total_errors = []
 
-    # Случайный батч
-    rand = np.random.randint(len(real_data) - batch_size)
-    real_matrix = np.reshape(
-        np.array([real_data[rand: rand + batch_size]]), (batch_size, 8)
-    )
+    # Случайный батч            (-num_answers -batch_size чтобы не вышли за границу)
+    rand = np.random.randint(len(real_data) -num_answers -batch_size)
+    real_batch = real_data[rand: rand +num_answers +batch_size]
 
-    for b in range(1, batch_size):
-        real_data_list = np.resize(real_matrix[b], (8)).tolist()
+    for b in range(num_answers):
+        real_data_list = real_batch[b: batch_size +b]
 
+        # Предсказание ИИшки на основе батча данных
         ai_ans_list = np.reshape(
-            np.array(ai.predict([[real_data_list]], verbose=False)), (5)
+            np.array(ai.predict(real_data_list, verbose=False))[:, -1], (5)
         )
-        # Не забываем про остаточное обучение
-        ai_ans_list = normalize(ai_ans_list, True)
-        ai_ans_list = (ai_ans_list + real_matrix[b][3:]).tolist()
+
+        # # Не забываем про остаточное обучение
+        # ai_ans_list = (ai_ans_list + real_batch[-1, 3:]).tolist()
+        ai_ans_list = normalize(ai_ans_list, convert_back=True).tolist()
 
         # Конвертируем данные из промежутка [-1; 1] в нормальную физическую  величину
-        real_data_list = [
-            norm_hours(real_data_list[0], True),
-            norm_day(real_data_list[1], True),
-            norm_month(real_data_list[2], True),
-        ] + conv_ai_ans_for_human(real_data_list[3:])
+        real_data_vect = real_data_list[-1][0]
+        real_data_for_human = [   norm_hours(real_data_vect[0], True),
+                                  norm_day(real_data_vect[1], True),
+                                  norm_month(real_data_vect[2], True),
+                              ] + conv_ai_ans_for_human(real_data_vect[3:])
 
-        ai_ans_list = conv_ai_ans_for_human(ai_ans_list)
+        ai_ans_for_human = conv_ai_ans_for_human(ai_ans_list)
 
         # В качестве ошибки просто добавляем разность между ответом ИИ и реальностью
-        errors = np.array(np.abs(np.array(real_data_list[3:]) - np.array(ai_ans_list)))
+        errors = np.array(np.abs(np.array(real_data_for_human[3:]) - np.array(ai_ans_for_human)))
         total_errors.append(errors)
 
         # Выводим всё
         print(
-            np.round(np.array(real_data_list[:3]), 1),
+            np.round(np.array(real_data_for_human[:3]), 1),
             "\t",
-            np.round(np.array(real_data_list[3:]), 1),
+            np.round(np.array(real_data_for_human[3:]), 1),
             "\t",
-            np.round(np.array(ai_ans_list), 1),
+            np.round(np.array(ai_ans_for_human), 1),
             "\t",
             np.round(np.array(errors), 1),
         )
@@ -402,18 +402,15 @@ def print_ai_answers(ai, real_data, batch_size):
     print("\n")
 
 
-def print_weather_predict(ai, len_predict_days=3, context_days=1):
-    print(
-        f"Prediction for the next {len_predict_days} days:\t\t\t",
-        f"(Temperature, Pressure, Humidity, Cloud, Raininess)",
-    )
+def print_weather_predict(ai, len_predict_days=3, context_days=1, batch_size=32):
+    print(f"Prediction for the next {len_predict_days} days:\t\t\t",
+          f"(Temperature, Pressure, Humidity, Cloud, Raininess)")
     ai.reset_states() # Очищаем данные, оставшиеся от обучения
 
+    # get_fresh_data(4) всёравно >32 записей не может быть передано
+    fresh_data = np.array(get_fresh_data(4))[-batch_size:]
     # Самое последнее - самое свежее
-    # Также сразу подаём только amount_available_context данных для прогноза
-    fresh_data = np.reshape(
-        np.array(get_fresh_data(context_days)), (int(context_days * 24//3), 8)
-    )[::-1]
+    fresh_data = np.reshape(fresh_data, (fresh_data.shape[0], 8))[::-1]
     times = fresh_data[:, :3].tolist()
     predicts_history = fresh_data[:, 3:].tolist()
 
@@ -425,7 +422,11 @@ def print_weather_predict(ai, len_predict_days=3, context_days=1):
         ai_ans = np.reshape(np.array(preds_on_preds)[:, -1], (5))
         ai_ans = normalize(ai_ans, True)
 
-        predicts_history.append((ai_ans + np.array(predicts_history[-1])).tolist())
+        # # Не забываем про остаточное обучение
+        # ai_ans = ai_ans + np.array(predicts_history[-1])
+        predicts_history.append(ai_ans.tolist())
+
+        # Сдвигаем последовательность
         predicts_history = predicts_history[1:]
 
         # Обновляем время

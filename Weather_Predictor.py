@@ -58,8 +58,8 @@ def load_data(name_db="moscow", how_many_context_days=20):
     DATA_out = np.array(DATA_out).reshape((len(DATA_out), 1, 8))
     DATA_in = np.array(DATA_in).reshape((len(DATA_out), 1, 8))
 
-    # Остаточное обучение
-    DATA_out = DATA_out - DATA_in
+    # # Остаточное обучение
+    # DATA_out = DATA_out - DATA_in
     # ИИшке не надо предсказывать время + нормализуем от -1 до 1
     DATA_out = WD.normalize(DATA_out[:, :, 3:])
 
@@ -102,9 +102,14 @@ def load_ai(loading_with=-1, print_summary=False):
         print()
 
 
-def create_ai(num_layers_conv=3, num_main_layers=5, num_neurons=32, batch_size=100, print_summary=True):
+def create_ai(num_layers_conv=3, num_main_layers=5, num_neurons=32, batch_size=32, print_summary=True):
     """Создаём ИИшки"""
     global ai
+
+    if not 1 < batch_size <= 32:
+        raise "batch_size может быть только в диапазоне [2; 32]" \
+              "(конечно можно и больше 32, но тогда не получится выводить ответы ии)"
+
     # Суть в том, чтобы расперелить задачи по предсказыванию между разными нейронками
     # Т.к. одна нейросеть очень плохо предскаывает одновременно все факторы
     general_input = Input(batch_shape=(batch_size, 1, 8))
@@ -156,20 +161,24 @@ def create_ai(num_layers_conv=3, num_main_layers=5, num_neurons=32, batch_size=1
 def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ ИИШКУ ПРЕДСКАЗВАТЬ СЛЕДУЮЩИЙ ЧАС
         start_on=-1,
         finish_on=99,  # Начинаем с номера последнего сохранения до finish_on
+
         epochs=3,
-        batch_size=100,
-        verbose=2,  # Параметры fit()
+        batch_size=32,
+        verbose=2,
+
         print_ai_answers=True,
-        len_prints_ai_answers=100,  # Выводить данные, или нет
-        print_weather_predict=True,  # Выводить ли прогноз погоды
+        len_prints_ai_answers=100,
+
+        print_weather_predict=True,
         len_predict_days=1,
+        conext_days=1,
+
         use_callbacks=False,
         callbacks_min_delta=10,
-        callbacks_patience=3,  # Параметры callbacks
+        callbacks_patience=3,
 ):
     """Это просто большая обёртка вокруг функции обучения"""
     global train_data, train_data_answer
-    num_dataset_offset = 1
 
     callbacks = (
         [
@@ -204,10 +213,7 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
 
     # Циклы обучения
     for learning_cycle in range(start_on, finish_on):
-        print(
-            f">>> Learning the {SAVE_NAME(learning_cycle)}\t\t\t"
-            f"Предсказывает на: {num_dataset_offset} ч вперёд"
-        )
+        print(f">>> Learning the {SAVE_NAME(learning_cycle)}")
         ai.fit(
             train_data,
             train_data_answer,
@@ -229,9 +235,9 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
 
         # Выводим данные и сравниваем
         if print_ai_answers:
-            WD.print_ai_answers(ai, train_data, len_prints_ai_answers)
+            WD.print_ai_answers(ai, train_data, batch_size, len_prints_ai_answers)
         if print_weather_predict:
-            WD.print_weather_predict(ai, len_predict_days)
+            WD.print_weather_predict(ai, len_predict_days, conext_days, batch_size)
 
 
 @tf.function
@@ -353,16 +359,17 @@ def train_make_predict(
 
 
 if __name__ == "__main__":
-    what_device_use("cpu")
-    ai_name("AI_v5.3")
+    what_device_use("пpu")
+    ai_name("AI_v6.0")
     load_data("moscow")
 
-    batch_size = 100
+    batch_size = 32
 
-    create_ai(4, 5, 100, batch_size=batch_size, print_summary=True)
+    create_ai(4, 7, 100, batch_size=batch_size, print_summary=True)
     # load_ai(print_summary=False)
 
-    # WD.print_weather_predict(ai, 7, 3.5)
-    start_train(-1, 5, epochs=3, batch_size=batch_size, verbose=1,
-                print_weather_predict=False, len_prints_ai_answers=50)
-    train_make_predict(50, 10, len_predict=24)
+    # WD.print_weather_predict(ai, 3, 1, batch_size)
+    # WD.print_ai_answers(ai, train_data, batch_size)
+
+    start_train(-1, 10, epochs=2, batch_size=batch_size, verbose=1, len_prints_ai_answers=50)
+    # train_make_predict(50, 10, len_predict=24)
