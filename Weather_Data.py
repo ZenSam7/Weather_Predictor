@@ -333,7 +333,7 @@ def get_fresh_data(how_many_context_days):
     return DATA[:int(how_many_context_days *24//3)]
 
 
-def print_ai_answers(ai, real_data, batch_size=32, num_answers=50):
+def print_ai_answers(ai, real_data, batch_size=100, num_answers=50):
     print("\n")
     print("Time\t\t\tReal Data\t\t\t\t\t\t\tAI answer\t\t\t\t\t\t\tErrors ∆")
 
@@ -349,9 +349,8 @@ def print_ai_answers(ai, real_data, batch_size=32, num_answers=50):
         real_data_list = real_batch[b: batch_size +b]
 
         # Предсказание ИИшки на основе батча данных
-        ai_ans_list = np.reshape(
-            np.array(ai.predict(real_data_list, verbose=False))[:, -1], (5)
-        )
+        pred = ai.predict(real_data_list, verbose=False, batch_size=batch_size)
+        ai_ans_list = np.reshape(np.array(pred)[:, -1], (5))
 
         # # Не забываем про остаточное обучение
         # ai_ans_list = (ai_ans_list + real_batch[-1, 3:]).tolist()
@@ -402,22 +401,23 @@ def print_ai_answers(ai, real_data, batch_size=32, num_answers=50):
     print("\n")
 
 
-def print_weather_predict(ai, len_predict_days=3, context_days=1, batch_size=32):
+def print_weather_predict(ai, len_predict_days=3, batch_size=100):
     print(f"Prediction for the next {len_predict_days} days:\t\t\t",
           f"(Temperature, Pressure, Humidity, Cloud, Raininess)")
     ai.reset_states() # Очищаем данные, оставшиеся от обучения
 
-    # get_fresh_data(4) всёравно >32 записей не может быть передано
-    fresh_data = np.array(get_fresh_data(4))[-batch_size:]
+    fresh_data = np.array(get_fresh_data(batch_size/8))[-batch_size:]
     # Самое последнее - самое свежее
     fresh_data = np.reshape(fresh_data, (fresh_data.shape[0], 8))[::-1]
     times = fresh_data[:, :3].tolist()
     predicts_history = fresh_data[:, 3:].tolist()
 
+    # Делаем прогноз по всей истории, а потом отбираем один прогноз, относящееся к последней записи
     for _ in range(int(len_predict_days * 24//3)):
-        # Делаем прогноз по всей истории, а потом отбираем один прогноз, относящееся к последней записи
+
         preds_on_preds = ai.predict(
-            np.array([[t + p] for t, p in zip(times, predicts_history)]), verbose=False
+            [[t + p] for t, p in zip(times, predicts_history)],
+            verbose=False, batch_size=batch_size,
         )
         ai_ans = np.reshape(np.array(preds_on_preds)[:, -1], (5))
         ai_ans = normalize(ai_ans, True)
@@ -432,11 +432,11 @@ def print_weather_predict(ai, len_predict_days=3, context_days=1, batch_size=32)
         # Обновляем время
         time = times[-1]
         time[0] += 3 / 12  # Увеличиваем часы
-        time[1] += 1 / 15.5 if time[0] > 1 else 0  # Увеличиваем день
-        time[2] += 1 / 6 if time[1] > 1 else 0  # Увеличиваем месяц
+        time[1] += 1 / 15.5 if time[0] >= 1 else 0  # Увеличиваем день
+        time[2] += 1 / 6 if time[1] >= 1 else 0  # Увеличиваем месяц
 
         # Следим, чтобы зачения не выходили за границы
-        time = [-1 if i > 1 else i for i in time]
+        time = [-1 if i >= 1 else i for i in time]
 
         times.append(time)
 

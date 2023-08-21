@@ -25,14 +25,13 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 tf.get_logger().setLevel(logging.ERROR)
 
 
-def what_device_use(device="gpu"):
+def what_device_use(device="cpu"):
+    # Работаем с CPU
+    tf.config.set_visible_devices([], "GPU")
+
     if device.lower() == "gpu":
         # Работаем с GPU
         tf.config.set_visible_devices(tf.config.list_physical_devices("GPU"), "GPU")
-
-    if device.lower() == "cpu":
-        # Работаем с CPU
-        tf.config.set_visible_devices([], "GPU")
 
 
 def load_data(name_db="moscow", how_many_context_days=20):
@@ -102,35 +101,31 @@ def load_ai(loading_with=-1, print_summary=False):
         print()
 
 
-def create_ai(num_layers_conv=3, num_main_layers=5, num_neurons=32, batch_size=32, print_summary=True):
+def create_ai(num_layers_conv=3, num_main_layers=5, num_neurons=32, batch_size=100, print_summary=True):
     """Создаём ИИшки"""
     global ai
 
-    if not 1 < batch_size <= 32:
-        raise "batch_size может быть только в диапазоне [2; 32]" \
-              "(конечно можно и больше 32, но тогда не получится выводить ответы ии)"
-
     # Суть в том, чтобы расперелить задачи по предсказыванию между разными нейронками
     # Т.к. одна нейросеть очень плохо предскаывает одновременно все факторы
-    general_input = Input(batch_shape=(batch_size, 1, 8))
+    general_input = Input(batch_input_shape=(batch_size, 1, 8))
 
     class Architecture:
         def get_ai(self):
-            num_conv_neurons = 8
+            num_conv_neurons = 4
             list_layers = []
 
             # Добавляем Conv1D
             for _ in range(num_layers_conv):
-                list_layers.append(Conv1D(num_conv_neurons, 8, padding="same"))
                 num_conv_neurons *= 2
+                list_layers.append(Conv1D(num_conv_neurons, 8, padding="same"))
 
             # Добавляем основные слои (чередуем Dense и LSTM)
             for i in range(num_main_layers):
                 if i % 2 == 0:
                     list_layers.append(Dense(num_neurons, activation="relu"))
                 else:
-                    # activation="relu" ?
-                    list_layers.append(LSTM(num_neurons, return_sequences=True, unroll=False, stateful=True))
+                    list_layers.append(LSTM(num_neurons, activation="relu", return_sequences=True,
+                                            unroll=False, stateful=True))
 
 
             return Sequential(list_layers)(general_input)
@@ -163,19 +158,20 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
         finish_on=99,  # Начинаем с номера последнего сохранения до finish_on
 
         epochs=3,
-        batch_size=32,
-        verbose=2,
+        batch_size=100,
+        verbose=1,
 
         print_ai_answers=True,
         len_prints_ai_answers=100,
 
         print_weather_predict=True,
         len_predict_days=1,
-        conext_days=1,
 
         use_callbacks=False,
         callbacks_min_delta=10,
         callbacks_patience=3,
+
+        save_model=True,
 ):
     """Это просто большая обёртка вокруг функции обучения"""
     global train_data, train_data_answer
@@ -193,10 +189,6 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
         else None
     )
 
-    # Убираем немного записей, чтобы train_data можно было ровно разделить на batch_size
-    train_data = train_data[: len(train_data) //batch_size *batch_size]
-    train_data_answer = train_data_answer[: len(train_data) //batch_size *batch_size]
-
     # Продолжаем с последнего сохранения если start_on == -1 (или создаём новое)
     if start_on == -1:
         try:
@@ -211,6 +203,10 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
         except BaseException:
             start_on = 0
 
+    # Убираем немного записей, чтобы train_data можно было ровно разделить на batch_size
+    train_data = train_data[: len(train_data) //batch_size *batch_size]
+    train_data_answer = train_data_answer[: len(train_data) //batch_size *batch_size]
+
     # Циклы обучения
     for learning_cycle in range(start_on, finish_on):
         print(f">>> Learning the {SAVE_NAME(learning_cycle)}")
@@ -223,21 +219,19 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
             shuffle=False,
             callbacks=callbacks,
         )
-        print()
 
         # Сохраняем
-        print(
-            f">>> Saving the {SAVE_NAME(learning_cycle)}  (Ignore the WARNING)",
-            end="\t\t",
-        )
-        ai.save(save_path(SAVE_NAME(learning_cycle)))
-        print("Done\n")
+        if save_model:
+            print(f"\n>>> Saving the {SAVE_NAME(learning_cycle)}  (Ignore the WARNING)",
+                  end="\t\t")
+            ai.save(save_path(SAVE_NAME(learning_cycle)))
+            print("Done\n")
 
         # Выводим данные и сравниваем
         if print_ai_answers:
             WD.print_ai_answers(ai, train_data, batch_size, len_prints_ai_answers)
         if print_weather_predict:
-            WD.print_weather_predict(ai, len_predict_days, conext_days, batch_size)
+            WD.print_weather_predict(ai, len_predict_days, batch_size)
 
 
 @tf.function
@@ -359,17 +353,17 @@ def train_make_predict(
 
 
 if __name__ == "__main__":
-    what_device_use("пpu")
-    ai_name("AI_v6.0")
+    what_device_use("cpu")
+    ai_name("AI_v6.5")
     load_data("moscow")
 
-    batch_size = 32
+    batch_size = 100
 
-    create_ai(4, 7, 100, batch_size=batch_size, print_summary=True)
+    create_ai(4, 7, 256, batch_size=batch_size)
     # load_ai(print_summary=False)
 
-    # WD.print_weather_predict(ai, 3, 1, batch_size)
-    # WD.print_ai_answers(ai, train_data, batch_size)
+    start_train(-1, 11, epochs=3, batch_size=batch_size,
+                len_prints_ai_answers=50, print_weather_predict=False)
+    WD.print_weather_predict(ai, 3, batch_size)
 
-    start_train(-1, 10, epochs=2, batch_size=batch_size, verbose=1, len_prints_ai_answers=50)
     # train_make_predict(50, 10, len_predict=24)
