@@ -107,13 +107,16 @@ def normalize(x, convert_back=False):
 
 
 def conv_ai_ans_for_human(List):
-    return [
-        norm_temperature(List[0], True),
-        norm_pressure(List[1], True),
-        norm_humidity(List[2], True),
-        norm_cloud(List[3], True),
-        List[4],
-    ]
+    try:
+        return [
+            norm_temperature(List[0], True),
+            norm_pressure(List[1], True),
+            norm_humidity(List[2], True),
+            norm_cloud(List[3], True),
+            List[4],
+        ]
+    except:
+        return [0, 0, 0, 0, 0]
 
 
 def conv_rain_to_words(x):
@@ -215,7 +218,33 @@ def get_moscow_data():
 
             DATA.append(processed_data)
 
-    return DATA
+    # Заполняем промежуточными значеними (т.к. у нас данные идут с шагом в 3 часа)
+    DATA = np.array(DATA)
+    conv_DATA = []
+    for i in range(len(DATA) - 1):
+        for conved in np.linspace(DATA[i], DATA[i + 1], num=4).tolist()[1:]:
+            conv_DATA.append(conved)
+
+    # Часы и числа дня заполняем отдельно
+    time_h, time_d, time_m = DATA[0, 0], DATA[0, 1], DATA[0, 2]    # Начинаем с начала
+    ind = 0     # Надо, чтобы одновременно заполнять DATA
+    while ind != len(DATA) -1:
+        time_h += 1/12
+        if time_h >1:
+            time_h = -1
+
+        time_d += 1/15.5 if time_h == -1 else 0
+        if time_d > 1:
+            time_d = -1
+
+        time_m += 1/6 if time_d == -1 else 0
+        if time_m > 1:
+            time_m = -1
+
+        DATA[ind, 0], DATA[ind, 1], DATA[ind, 2] = time_h, time_d, time_m
+        ind += 1
+
+    return conv_DATA
 
 
 def get_fresh_data(how_many_context_days):
@@ -330,7 +359,33 @@ def get_fresh_data(how_many_context_days):
 
         DATA.append(processed_data)
 
-    return DATA[:int(how_many_context_days *24//3)]
+    # Заполняем промежуточными значеними (т.к. у нас данные идут с шагом в 3 часа)
+    DATA = np.array(DATA)
+    conv_DATA = []
+    for i in range(len(DATA) - 1):
+        for conved in np.linspace(DATA[i], DATA[i + 1], num=4).tolist()[1:]:
+            conv_DATA.append(conved)
+
+    # Часы и числа дня заполняем отдельно
+    time_h, time_d, time_m = DATA[0, 0], DATA[0, 1], DATA[0, 2]    # Начинаем с начала
+    ind = 0     # Надо, чтобы одновременно заполнять DATA
+    while ind != len(DATA) -1:
+        time_h += 1/12
+        if time_h >1:
+            time_h = -1
+
+        time_d += 1/15.5 if time_h == -1 else 0
+        if time_d > 1:
+            time_d = -1
+
+        time_m += 1/6 if time_d == -1 else 0
+        if time_m > 1:
+            time_m = -1
+
+        DATA[ind, 0], DATA[ind, 1], DATA[ind, 2] = time_h, time_d, time_m
+        ind += 1
+
+    return conv_DATA[:int(how_many_context_days *24//3)]
 
 
 def print_ai_answers(ai, real_data, batch_size=100, num_answers=50):

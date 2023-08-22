@@ -71,7 +71,7 @@ def ai_name(name):
     global save_path, SAVE_NAME
 
     def save_path(ai_name):
-        return f"Saves Weather Prophet/{ai_name}"
+        return f"./Saves_Weather_Prophet/{ai_name}"
 
     def SAVE_NAME(num):
         return f"{name}~{num}"
@@ -83,22 +83,29 @@ def load_ai(loading_with=-1, print_summary=False):
 
     # Вычисляем номер последнего сохранения с текущем именем
     if loading_with == -1:
-        loading_with = int(
-            sorted(
-                [
-                    save_name if SAVE_NAME(0)[:-2] in save_name else None
-                    for save_name in os.listdir("Saves Weather Prophet")
-                ]
-            )[-1].split("~")[-1]
-        )
+        saves = []
+        for save_name in os.listdir("Saves_Weather_Prophet"):
+            if SAVE_NAME(0)[:-2] in save_name:
+                saves.append(save_name)
+
+        if saves == []:
+            raise f"Нет ни одного сохранения с именем {SAVE_NAME(0)[:-2]}"
+
+        loading_with = int(sorted(saves)[-1].split("~")[-1])
 
     print(f">>> Loading the {SAVE_NAME(loading_with)}", end="\t\t")
     ai = tf.keras.models.load_model(save_path(SAVE_NAME(loading_with)))
     print("Done\n")
-
     if print_summary:
         ai.summary()
         print()
+
+
+def save_ai(num):
+    print(f"\n>>> Saving the {SAVE_NAME(num)}  (Ignore the WARNING)",
+          end="\t\t")
+    ai.save(save_path(SAVE_NAME(num)))
+    print("Done\n")
 
 
 def create_ai(num_layers_conv=3, num_main_layers=5, num_neurons=32, batch_size=100, print_summary=True):
@@ -144,9 +151,10 @@ def create_ai(num_layers_conv=3, num_main_layers=5, num_neurons=32, batch_size=1
         name="Weather_Predictor",
     )
 
-    ai.compile(optimizer=keras.optimizers.Adam(1e-3), loss="mean_squared_error",
-               loss_weights={"temp": 100_000, "press": 10_000, "humid": 10_000, "cloud": 10_000, "rain": 100_000},)
-               # Отдаём приоритет температуре и осадкам, и увеличиваем всем ошибки (иначе они будут ≈0)
+    # mean_absolute_percentage_error
+    ai.compile(optimizer=keras.optimizers.Adam(1e-6), loss="mean_absolute_error",
+               loss_weights={"temp": 1_000, "press": 100, "humid": 100, "cloud": 100, "rain": 100},)
+               # Отдаём приоритет температуре, и увеличиваем всем ошибки (иначе они будут ≈0)
 
     if print_summary:
         ai.summary()
@@ -196,7 +204,7 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
                 sorted(
                     [
                         save_name if SAVE_NAME(0)[:-2] in save_name else None
-                        for save_name in os.listdir("Saves Weather Prophet")
+                        for save_name in os.listdir("Saves_Weather_Prophet")
                     ]
                 )[-1].split("~")[-1]
             ) +1
@@ -222,10 +230,7 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
 
         # Сохраняем
         if save_model:
-            print(f"\n>>> Saving the {SAVE_NAME(learning_cycle)}  (Ignore the WARNING)",
-                  end="\t\t")
-            ai.save(save_path(SAVE_NAME(learning_cycle)))
-            print("Done\n")
+            save_ai(learning_cycle)
 
         # Выводим данные и сравниваем
         if print_ai_answers:
@@ -307,14 +312,15 @@ def train_make_predict(
     # Продолжаем с последнего сохранения если start_on == -1 (или создаём новое)
     if start_on == -1:
         try:
-            start_on = int(
-                sorted(
-                    [
-                        save_name if SAVE_NAME(0)[:-2] in save_name else None
-                        for save_name in os.listdir("Saves Weather Prophet")
-                    ]
-                )[-1].split("~")[-1]
-            ) + 1
+            saves = []
+            for save_name in os.listdir("Saves_Weather_Prophet"):
+                if SAVE_NAME(0)[:-2] in save_name:
+                    saves.append(save_name)
+
+            if saves == []:
+                raise f"Нет ни одного сохранения с именем {SAVE_NAME(0)[:-2]}"
+
+            start_on = int(sorted(saves)[-1].split("~")[-1]) +1
         except BaseException:
             start_on = 0
 
@@ -345,25 +351,24 @@ def train_make_predict(
         )
 
         # Сохраняем
-        print(f">>> Saving the {SAVE_NAME(learning_cycle)}  (Ignore the WARNING)", end="\t\t")
-        ai.save(save_path(SAVE_NAME(learning_cycle)))
-        print("Done\n")
+        sane_ai(learning_cycle)
 
         WD.print_weather_predict(ai, 1)
 
 
 if __name__ == "__main__":
-    what_device_use("cpu")
-    ai_name("AI_v6.5")
+    what_device_use("сpu")
+    ai_name("AI_v6.5_test")
     load_data("moscow")
 
-    batch_size = 100
+    batch_size = 168
 
-    create_ai(4, 7, 256, batch_size=batch_size)
+    create_ai(4, 7, 100, batch_size=batch_size)
     # load_ai(print_summary=False)
 
-    start_train(-1, 11, epochs=3, batch_size=batch_size,
+    start_train(-1, 99, epochs=2, batch_size=batch_size,
                 len_prints_ai_answers=50, print_weather_predict=False)
     WD.print_weather_predict(ai, 3, batch_size)
 
-    # train_make_predict(50, 10, len_predict=24)
+
+    # train_make_predict(batch_size, 10, len_predict=24)
