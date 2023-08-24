@@ -15,7 +15,7 @@ import os
 np.set_printoptions(suppress=True)  # Убраем экспонинцеальную запись
 
 
-def norm_temperature(x, convert_back=False):
+def norm_temperature(x: np.ndarray, convert_back=False):
     """Нормализуем температуру от -1 до 1"""
     if convert_back:
         return round(arctanh(x) * 20, 1)
@@ -23,7 +23,7 @@ def norm_temperature(x, convert_back=False):
     return tanh(x / 20)
 
 
-def norm_pressure(x, convert_back=False):
+def norm_pressure(x: np.ndarray, convert_back=False):
     """Нормализуем давление от -1 до 1"""
     if convert_back:
         return round(arctanh(x) * 20 + 750, 1)
@@ -31,7 +31,7 @@ def norm_pressure(x, convert_back=False):
     return tanh((x - 750) / 20)
 
 
-def norm_humidity(x, convert_back=False):
+def norm_humidity(x: np.ndarray, convert_back=False):
     """Нормализуем влажность от -1 до 1"""
     if convert_back:
         return int(x * 50 + 50)
@@ -39,7 +39,7 @@ def norm_humidity(x, convert_back=False):
     return (x - 50) / 50
 
 
-def norm_cloud(x, convert_back=False):
+def norm_cloud(x: np.ndarray, convert_back=False):
     """Нормализуем облачность от -1 до 1"""
     if convert_back:
         return int(x * 50 + 50)
@@ -47,7 +47,7 @@ def norm_cloud(x, convert_back=False):
     return (x - 50) / 50
 
 
-def norm_hours(x, convert_back=False):
+def norm_hours(x: np.ndarray, convert_back=False):
     """Нормализуем время суток от -1 до 1"""
     if convert_back:
         return int(x * 12 + 12)
@@ -55,7 +55,7 @@ def norm_hours(x, convert_back=False):
     return (x - 12) / 12
 
 
-def norm_day(x, convert_back=False):
+def norm_day(x: np.ndarray, convert_back=False):
     """Нормализуем номер дня от -1 до 1"""
     if convert_back:
         return int(x * 15.5 + 15.5)
@@ -63,7 +63,7 @@ def norm_day(x, convert_back=False):
     return (x - 15.5) / 15.5
 
 
-def norm_month(x, convert_back=False):
+def norm_month(x: np.ndarray, convert_back=False):
     """Нормализуем номер месяца от -1 до 1"""
     if convert_back:
         return int(x * 6 + 6)
@@ -71,42 +71,74 @@ def norm_month(x, convert_back=False):
     return (x - 6) / 6
 
 
-def clamp(num, Min, Max):
+def clamp(num: float, Min: float, Max: float):
     return min(max(Min, num), Max)
 
 
-def normalize(x, convert_back=False):
+def normalize(x: np.ndarray, convert_back=False):
     """Нормализуем данные от -1 до 1"""
 
     if convert_back:
         with open("Datasets/Info_About_Last_Dataset.txt", "r") as save:
-            save = save.read().split("\n")
-            MIN_DATA = float(save[1][4:])
-            MAX_DATA = float(save[2][4:])
+            save = save.read().split("\n")[:-1]
 
-        result = (x + 1) / 2  # от 0 до 1
-        result = result * MAX_DATA + MIN_DATA
-        return result
+            # Восстанавливаем каждое отдельно
+            joined_norm_data = None # Надо начать с данных нужной архитектуры, чтобы объединить
+            for i in range(0, 10, 2):
+                buffer = x[:, :, int(i/2)]
+
+                MIN_DATA = float(save[i][4:])
+                MAX_DATA = float(save[i+1][4:])
+
+                result = (buffer + 1) / 2  # от 0 до 1
+                result = result * (MAX_DATA - MIN_DATA) + MIN_DATA
+
+                # Объединяем
+                if joined_norm_data is None:
+                    joined_norm_data = result
+                else:
+                    joined_norm_data = np.concatenate((joined_norm_data, result), axis=1)
+
+        return joined_norm_data
+
 
     # Сохраняем информацию о том, как потом нормализовать данные обратно
-    os.remove("Datasets/Info_About_Last_Dataset.txt")
+    # (сохраняем по каждому параметру (температуру, влажность ...))
+    try:
+        os.remove("Datasets/Info_About_Last_Dataset.txt")
+    except:
+        pass
     with open("Datasets/Info_About_Last_Dataset.txt", "w+") as save:
-        save.write(
-            f"Data set data for last saved AI\n" f"MIN={np.min(x)}\n" f"MAX={np.max(x - np.min(x))}"
-        )
+        mins_list = np.min(x, axis=0).tolist()[0]
+        maxs_list = np.max(x, axis=0).tolist()[0]
+        for min, max in zip(mins_list, maxs_list):
+            save.write(f"MIN={min}\n" f"MAX={max}\n")
 
-    # Сначала нормализуем от 0 до 1
-    result = x - np.min(x)
-    if np.max(result) != 0.0:
-        result = result / np.max(result)
+    # Каждый компонент природы нормализуем отдельно
+    joined_norm_data = None # Надо начать с данных нужной архитектуры, чтобы объединить
+    for ind in range(5):
+        buffer = x[:, :, ind]
 
-    # Потом от -1 до 1
-    result = result * 2 - 1
+        # Сначала нормализуем от 0 до 1
+        result = buffer - np.min(buffer)
+        if np.max(result) != 0.0:
+            result = result / np.max(result)
 
-    return result
+        # Потом от -1 до 1
+        result = result * 2 - 1
+
+        # Объединяем
+        if joined_norm_data is None:
+            joined_norm_data = result
+        else:
+            joined_norm_data = np.concatenate((joined_norm_data, result), axis=1)
+
+    joined_norm_data = np.reshape(joined_norm_data, (joined_norm_data.shape[0], 1, 5))
+
+    return joined_norm_data
 
 
-def conv_ai_ans_for_human(List):
+def conv_ai_ans_for_human(List: list):
     try:
         return [
             norm_temperature(List[0], True),
@@ -119,7 +151,7 @@ def conv_ai_ans_for_human(List):
         return [0, 0, 0, 0, 0]
 
 
-def conv_rain_to_words(x):
+def conv_rain_to_words(num: float):
     word = ""
 
     if abs(x) <= 0.1:
@@ -218,36 +250,10 @@ def get_moscow_data():
 
             DATA.append(processed_data)
 
-    # Заполняем промежуточными значеними (т.к. у нас данные идут с шагом в 3 часа)
-    DATA = np.array(DATA)
-    conv_DATA = []
-    for i in range(len(DATA) - 1):
-        for conved in np.linspace(DATA[i], DATA[i + 1], num=4).tolist()[1:]:
-            conv_DATA.append(conved)
-
-    # Часы и числа дня заполняем отдельно
-    time_h, time_d, time_m = DATA[0, 0], DATA[0, 1], DATA[0, 2]    # Начинаем с начала
-    ind = 0     # Надо, чтобы одновременно заполнять DATA
-    while ind != len(DATA) -1:
-        time_h += 1/12
-        if time_h >1:
-            time_h = -1
-
-        time_d += 1/15.5 if time_h == -1 else 0
-        if time_d > 1:
-            time_d = -1
-
-        time_m += 1/6 if time_d == -1 else 0
-        if time_m > 1:
-            time_m = -1
-
-        DATA[ind, 0], DATA[ind, 1], DATA[ind, 2] = time_h, time_d, time_m
-        ind += 1
-
-    return conv_DATA
+    return DATA
 
 
-def get_fresh_data(how_many_context_days):
+def get_fresh_data(how_many_context_days: int):
     now_date = dt.datetime.today()
     last_date = now_date - dt.timedelta(days=how_many_context_days //1 + 1)
 
@@ -359,33 +365,7 @@ def get_fresh_data(how_many_context_days):
 
         DATA.append(processed_data)
 
-    # Заполняем промежуточными значеними (т.к. у нас данные идут с шагом в 3 часа)
-    DATA = np.array(DATA)
-    conv_DATA = []
-    for i in range(len(DATA) - 1):
-        for conved in np.linspace(DATA[i], DATA[i + 1], num=4).tolist()[1:]:
-            conv_DATA.append(conved)
-
-    # Часы и числа дня заполняем отдельно
-    time_h, time_d, time_m = DATA[0, 0], DATA[0, 1], DATA[0, 2]    # Начинаем с начала
-    ind = 0     # Надо, чтобы одновременно заполнять DATA
-    while ind != len(DATA) -1:
-        time_h += 1/12
-        if time_h >1:
-            time_h = -1
-
-        time_d += 1/15.5 if time_h == -1 else 0
-        if time_d > 1:
-            time_d = -1
-
-        time_m += 1/6 if time_d == -1 else 0
-        if time_m > 1:
-            time_m = -1
-
-        DATA[ind, 0], DATA[ind, 1], DATA[ind, 2] = time_h, time_d, time_m
-        ind += 1
-
-    return conv_DATA[:int(how_many_context_days *24//3)]
+    return DATA[:int(how_many_context_days *24//3)]
 
 
 def print_ai_answers(ai, real_data, batch_size=100, num_answers=50):
@@ -407,8 +387,8 @@ def print_ai_answers(ai, real_data, batch_size=100, num_answers=50):
         pred = ai.predict(real_data_list, verbose=False, batch_size=batch_size)
         ai_ans_list = np.reshape(np.array(pred)[:, -1], (5))
 
-        # # Не забываем про остаточное обучение
-        # ai_ans_list = (ai_ans_list + real_batch[-1, 3:]).tolist()
+        # Не забываем про остаточное обучение
+        ai_ans_list = (ai_ans_list + np.array(real_data_list)[-1, 3:]).tolist()
         ai_ans_list = normalize(ai_ans_list, convert_back=True).tolist()
 
         # Конвертируем данные из промежутка [-1; 1] в нормальную физическую  величину
@@ -477,8 +457,8 @@ def print_weather_predict(ai, len_predict_days=3, batch_size=100):
         ai_ans = np.reshape(np.array(preds_on_preds)[:, -1], (5))
         ai_ans = normalize(ai_ans, True)
 
-        # # Не забываем про остаточное обучение
-        # ai_ans = ai_ans + np.array(predicts_history[-1])
+        # Не забываем про остаточное обучение
+        ai_ans = ai_ans + np.array(predicts_history[-1])
         predicts_history.append(ai_ans.tolist())
 
         # Сдвигаем последовательность

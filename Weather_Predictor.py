@@ -1,4 +1,5 @@
-import logging
+print(">>> Importing libraries", end="\t\t")
+from logging import ERROR
 from tqdm import tqdm
 from time import time
 import Weather_Data as WD
@@ -22,7 +23,8 @@ tf.data.experimental.enable_debug_mode()
 
 # Убираем предупреждения
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-tf.get_logger().setLevel(logging.ERROR)
+tf.get_logger().setLevel(ERROR)
+print("Done")
 
 
 def what_device_use(device="cpu"):
@@ -37,33 +39,39 @@ def what_device_use(device="cpu"):
 def load_data(name_db="moscow", how_many_context_days=20):
     """Загружаем данные"""
     global train_data, train_data_answer
+    print("\n>>> Loading and processing Dataset", end="\t\t")
 
-    # В WD.get_moscow_data     167_217 записей      (все данные идут с шагом в 1 часа)
-    # В WD.get_fresh_data        1_455 записей      (данные за последние 60 дней, идут с шагом в 1 час)
+    # В WD.get_moscow_data     167_217 записей      (все данные идут с шагом в 3 часа)
+    # В WD.get_fresh_data        1_455 записей      (данные за последние 60 дней, идут с шагом в 3 часа)
 
-    DATA_out = WD.get_moscow_data()
+    DATA = WD.get_moscow_data()
     if name_db == "fresh":
-        DATA_out = WD.get_fresh_data(how_many_context_days)
-    print(">>> Dataset loaded\n")
+        DATA = WD.get_fresh_data(how_many_context_days)
 
-    """DATA_in == Данные погоды, начиная с 1ого дня (принимает)
-       DATA_out == Данные погоды, начиная с 2ого дня (должен предсказать)"""
+    """DATA_in == Данные погоды, начиная с 1й записи (принимает)
+       DATA_out == Данные погоды, начиная с 2й записи (должен предсказать)"""
 
     # Создаём смещени назад во времени
-    DATA_in = DATA_out[:-1]
-    DATA_out = DATA_out[1:]
+    DATA_in = DATA[:-1]
+    DATA_out = DATA[1:]
 
     # Преобразуем данные
-    DATA_out = np.array(DATA_out).reshape((len(DATA_out), 1, 8))
     DATA_in = np.array(DATA_in).reshape((len(DATA_out), 1, 8))
+    DATA_out = np.array(DATA_out).reshape((len(DATA_out), 1, 8))
 
-    # # Остаточное обучение
-    # DATA_out = DATA_out - DATA_in
-    # ИИшке не надо предсказывать время + нормализуем от -1 до 1
-    DATA_out = WD.normalize(DATA_out[:, :, 3:])
+    # Остаточное обучение
+    DATA_out = DATA_in - DATA_out
+    # ИИшке не надо предсказывать время
+    DATA_out = DATA_out[:, :, 3:]
+    # Нормализуем (чтобы ИИшка могла как можно шире )
+    DATA_out = WD.normalize(DATA_out)
 
     train_data = DATA_in
     train_data_answer = DATA_out
+
+    DATA_out = WD.normalize(DATA_out, True)
+
+    print("Done\n")
 
 
 def ai_name(name):
@@ -357,18 +365,18 @@ def train_make_predict(
 
 
 if __name__ == "__main__":
-    what_device_use("сpu")
+    what_device_use("cpu")
     ai_name("AI_v6.5_test")
     load_data("moscow")
 
-    batch_size = 168
+    batch_size = 50
 
-    create_ai(4, 7, 100, batch_size=batch_size)
+    create_ai(3, 7, 32, batch_size)
     # load_ai(print_summary=False)
 
     start_train(-1, 99, epochs=2, batch_size=batch_size,
                 len_prints_ai_answers=50, print_weather_predict=False)
-    WD.print_weather_predict(ai, 3, batch_size)
+    WD.print_weather_predict(ai, 1, batch_size)
 
 
     # train_make_predict(batch_size, 10, len_predict=24)
