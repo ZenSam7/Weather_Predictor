@@ -59,8 +59,8 @@ def load_data(name_db="moscow", how_many_context_days=20):
     DATA_in = np.array(DATA_in).reshape((len(DATA_out), 1, 8))
     DATA_out = np.array(DATA_out).reshape((len(DATA_out), 1, 8))
 
-    # Остаточное обучение
-    DATA_out = DATA_in - DATA_out
+    # # Остаточное обучение
+    # DATA_out = DATA_in - DATA_out
     # ИИшке не надо предсказывать время
     DATA_out = DATA_out[:, :, 3:]
     # Нормализуем (чтобы ИИшка могла как можно шире )
@@ -68,8 +68,6 @@ def load_data(name_db="moscow", how_many_context_days=20):
 
     train_data = DATA_in
     train_data_answer = DATA_out
-
-    DATA_out = WD.normalize(DATA_out, True)
 
     print("Done\n")
 
@@ -181,7 +179,7 @@ def start_train(  # ЭТА ФУНКЦИЯ НУЖНА ЧТОБЫ ОБУЧТЬ И�
         len_prints_ai_answers=100,
 
         print_weather_predict=True,
-        len_predict_days=1,
+        len_predict_days=3,
 
         use_callbacks=False,
         callbacks_min_delta=10,
@@ -366,17 +364,16 @@ def train_make_predict(
 
 if __name__ == "__main__":
     what_device_use("cpu")
-    ai_name("AI_v6.5_test")
+    ai_name("AI_v7.0_test")
     load_data("moscow")
 
     batch_size = 50
 
-    create_ai(3, 7, 32, batch_size)
-    # load_ai(print_summary=False)
+    create_ai(0, 5, 100, batch_size)
+    # load_ai(print_summary=True)
 
-    start_train(-1, 99, epochs=2, batch_size=batch_size,
-                len_prints_ai_answers=50, print_weather_predict=False)
-    WD.print_weather_predict(ai, 1, batch_size)
+    start_train(-1, 7, epochs=3, batch_size=batch_size, len_prints_ai_answers=50,
+                print_weather_predict=False, print_ai_answers=False)
 
 
     # train_make_predict(batch_size, 10, len_predict=24)

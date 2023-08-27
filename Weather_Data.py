@@ -138,32 +138,29 @@ def normalize(x: np.ndarray, convert_back=False):
     return joined_norm_data
 
 
-def conv_ai_ans_for_human(List: list):
-    try:
-        return [
-            norm_temperature(List[0], True),
-            norm_pressure(List[1], True),
-            norm_humidity(List[2], True),
-            norm_cloud(List[3], True),
-            List[4],
-        ]
-    except:
-        return [0, 0, 0, 0, 0]
+def conv_ai_ans_for_human(ai_answer: list):
+    return [
+        norm_temperature(ai_answer[0], True),
+        norm_pressure(ai_answer[1], True),
+        norm_humidity(ai_answer[2], True),
+        norm_cloud(ai_answer[3], True),
+        ai_answer[4],
+    ]
 
 
 def conv_rain_to_words(num: float):
     word = ""
 
-    if abs(x) <= 0.1:
+    if abs(num) <= 0.1:
         return "Clear"
 
-    word = "rain" if x > 0 else "snow"
+    word = "rain" if num > 0 else "snow"
 
-    if abs(x) <= 0.4:
+    if abs(num) <= 0.4:
         word = "light " + word
-    elif 0.4 <= abs(x) <= 0.7:
+    elif 0.4 <= abs(num) <= 0.7:
         word = word  # "moderate " + word
-    elif abs(x) >= 0.7:
+    elif abs(num) >= 0.7:
         word = "heavy " + word
 
     return word.capitalize()
@@ -383,16 +380,19 @@ def print_ai_answers(ai, real_data, batch_size=100, num_answers=50):
     for b in range(num_answers):
         real_data_list = real_batch[b: batch_size +b]
 
+        ai.reset_states()  # Очищаем данные, оставшиеся от прошлого батча
+
         # Предсказание ИИшки на основе батча данных
         pred = ai.predict(real_data_list, verbose=False, batch_size=batch_size)
-        ai_ans_list = np.reshape(np.array(pred)[:, -1], (5))
+        ai_ans = np.reshape(np.array(pred)[:, -1], (5))
 
-        # Не забываем про остаточное обучение
-        ai_ans_list = (ai_ans_list + np.array(real_data_list)[-1, 3:]).tolist()
-        ai_ans_list = normalize(ai_ans_list, convert_back=True).tolist()
+        # Не забываем про остаточное обучение и нормализацию
+        # ai_ans = np.array([[ai_ans + real_data_list[-1, 0, 3:]]])
+        # ai_ans_list = normalize(ai_ans, convert_back=True)[0].tolist()
+        ai_ans_list = normalize(np.array([[ai_ans]]), convert_back=True)[0].tolist()
 
         # Конвертируем данные из промежутка [-1; 1] в нормальную физическую  величину
-        real_data_vect = real_data_list[-1][0]
+        real_data_vect = real_data_list[-1, 0].tolist()
         real_data_for_human = [   norm_hours(real_data_vect[0], True),
                                   norm_day(real_data_vect[1], True),
                                   norm_month(real_data_vect[2], True),
@@ -454,12 +454,14 @@ def print_weather_predict(ai, len_predict_days=3, batch_size=100):
             [[t + p] for t, p in zip(times, predicts_history)],
             verbose=False, batch_size=batch_size,
         )
-        ai_ans = np.reshape(np.array(preds_on_preds)[:, -1], (5))
-        ai_ans = normalize(ai_ans, True)
+        ai_ans = np.reshape(np.array(preds_on_preds)[:, -1], (1, 1, 5))
+        ai_ans = normalize(ai_ans, convert_back=True)
 
-        # Не забываем про остаточное обучение
-        ai_ans = ai_ans + np.array(predicts_history[-1])
-        predicts_history.append(ai_ans.tolist())
+        # # Не забываем про остаточное обучение
+        # ai_ans = ai_ans + np.array(predicts_history[-1])
+
+        # Добавляем
+        predicts_history.append(ai_ans.tolist()[0])
 
         # Сдвигаем последовательность
         predicts_history = predicts_history[1:]
