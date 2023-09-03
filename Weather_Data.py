@@ -71,8 +71,8 @@ def norm_month(x: np.ndarray, convert_back=False):
     return (x - 6) / 6
 
 
-def clamp(num: float, Min: float, Max: float):
-    return min(max(Min, num), Max)
+def clamp(num: float, minimum: float, maximum: float):
+    return min(max(minimum, num), maximum)
 
 
 def normalize(x: np.ndarray, convert_back=False):
@@ -83,12 +83,14 @@ def normalize(x: np.ndarray, convert_back=False):
             save = save.read().split("\n")[:-1]
 
             # Восстанавливаем каждое отдельно
-            joined_norm_data = None # Надо начать с данных нужной архитектуры, чтобы объединить
+            joined_norm_data = (
+                None  # Надо начать с данных нужной архитектуры, чтобы объединить
+            )
             for i in range(0, 10, 2):
-                buffer = x[:, :, int(i/2)]
+                buffer = x[:, :, int(i / 2)]
 
                 MIN_DATA = float(save[i][4:])
-                MAX_DATA = float(save[i+1][4:])
+                MAX_DATA = float(save[i + 1][4:])
 
                 result = (buffer + 1) / 2  # от 0 до 1
                 result = result * (MAX_DATA - MIN_DATA) + MIN_DATA
@@ -97,10 +99,11 @@ def normalize(x: np.ndarray, convert_back=False):
                 if joined_norm_data is None:
                     joined_norm_data = result
                 else:
-                    joined_norm_data = np.concatenate((joined_norm_data, result), axis=1)
+                    joined_norm_data = np.concatenate(
+                        (joined_norm_data, result), axis=1
+                    )
 
         return joined_norm_data
-
 
     # Сохраняем информацию о том, как потом нормализовать данные обратно
     # (сохраняем по каждому параметру (температуру, влажность ...))
@@ -115,7 +118,7 @@ def normalize(x: np.ndarray, convert_back=False):
             save.write(f"MIN={min}\n" f"MAX={max}\n")
 
     # Каждый компонент природы нормализуем отдельно
-    joined_norm_data = None # Надо начать с данных нужной архитектуры, чтобы объединить
+    joined_norm_data = None  # Надо начать с данных нужной архитектуры, чтобы объединить
     for ind in range(5):
         buffer = x[:, :, ind]
 
@@ -252,7 +255,7 @@ def get_moscow_data():
 
 def get_fresh_data(how_many_context_days: int):
     now_date = dt.datetime.today()
-    last_date = now_date - dt.timedelta(days=how_many_context_days //1 + 1)
+    last_date = now_date - dt.timedelta(days=how_many_context_days // 1 + 1)
 
     now_date = now_date.strftime("%d.%m.%Y")
     last_date = last_date.strftime("%d.%m.%Y")
@@ -362,7 +365,7 @@ def get_fresh_data(how_many_context_days: int):
 
         DATA.append(processed_data)
 
-    return DATA[:int(how_many_context_days *24//3)]
+    return DATA[: int(how_many_context_days * 24 // 3)]
 
 
 def print_ai_answers(ai, real_data, batch_size=100, num_answers=50):
@@ -374,11 +377,11 @@ def print_ai_answers(ai, real_data, batch_size=100, num_answers=50):
     total_errors = []
 
     # Случайный батч            (-num_answers -batch_size чтобы не вышли за границу)
-    rand = np.random.randint(len(real_data) -num_answers -batch_size)
-    real_batch = real_data[rand: rand +num_answers +batch_size]
+    rand = np.random.randint(len(real_data) - num_answers - batch_size)
+    real_batch = real_data[rand : rand + num_answers + batch_size]
 
     for b in range(num_answers):
-        real_data_list = real_batch[b: batch_size +b]
+        real_data_list = real_batch[b : batch_size + b]
 
         ai.reset_states()  # Очищаем данные, оставшиеся от прошлого батча
 
@@ -387,21 +390,25 @@ def print_ai_answers(ai, real_data, batch_size=100, num_answers=50):
         ai_ans = np.reshape(np.array(pred)[:, -1], (5))
 
         # Не забываем про остаточное обучение и нормализацию
-        # ai_ans = np.array([[ai_ans + real_data_list[-1, 0, 3:]]])
-        # ai_ans_list = normalize(ai_ans, convert_back=True)[0].tolist()
-        ai_ans_list = normalize(np.array([[ai_ans]]), convert_back=True)[0].tolist()
+        ai_ans = np.array([[ai_ans + real_data_list[-1, 0, 3:]]])
+        ai_ans_list = normalize(ai_ans, convert_back=True)[0].tolist()
+        # Для версии без остаточного обучения
+        # ai_ans_list = normalize(np.array([[ai_ans]]), convert_back=True)[0].tolist()
 
         # Конвертируем данные из промежутка [-1; 1] в нормальную физическую  величину
         real_data_vect = real_data_list[-1, 0].tolist()
-        real_data_for_human = [   norm_hours(real_data_vect[0], True),
-                                  norm_day(real_data_vect[1], True),
-                                  norm_month(real_data_vect[2], True),
-                              ] + conv_ai_ans_for_human(real_data_vect[3:])
+        real_data_for_human = [
+            norm_hours(real_data_vect[0], True),
+            norm_day(real_data_vect[1], True),
+            norm_month(real_data_vect[2], True),
+        ] + conv_ai_ans_for_human(real_data_vect[3:])
 
         ai_ans_for_human = conv_ai_ans_for_human(ai_ans_list)
 
         # В качестве ошибки просто добавляем разность между ответом ИИ и реальностью
-        errors = np.array(np.abs(np.array(real_data_for_human[3:]) - np.array(ai_ans_for_human)))
+        errors = np.array(
+            np.abs(np.array(real_data_for_human[3:]) - np.array(ai_ans_for_human))
+        )
         total_errors.append(errors)
 
         # Выводим всё
@@ -437,28 +444,30 @@ def print_ai_answers(ai, real_data, batch_size=100, num_answers=50):
 
 
 def print_weather_predict(ai, len_predict_days=3, batch_size=100):
-    print(f"Prediction for the next {len_predict_days} days:\t\t\t",
-          f"(Temperature, Pressure, Humidity, Cloud, Raininess)")
-    ai.reset_states() # Очищаем данные, оставшиеся от обучения
+    print(
+        f"Prediction for the next {len_predict_days} days:\t\t\t",
+        f"(Temperature, Pressure, Humidity, Cloud, Raininess)",
+    )
+    ai.reset_states()  # Очищаем данные, оставшиеся от обучения
 
-    fresh_data = np.array(get_fresh_data(batch_size/8))[-batch_size:]
+    fresh_data = np.array(get_fresh_data(batch_size / 8))[-batch_size:]
     # Самое последнее - самое свежее
     fresh_data = np.reshape(fresh_data, (fresh_data.shape[0], 8))[::-1]
     times = fresh_data[:, :3].tolist()
     predicts_history = fresh_data[:, 3:].tolist()
 
     # Делаем прогноз по всей истории, а потом отбираем один прогноз, относящееся к последней записи
-    for _ in range(int(len_predict_days * 24//3)):
-
+    for _ in range(int(len_predict_days * 24 // 3)):
         preds_on_preds = ai.predict(
             [[t + p] for t, p in zip(times, predicts_history)],
-            verbose=False, batch_size=batch_size,
+            verbose=False,
+            batch_size=batch_size,
         )
         ai_ans = np.reshape(np.array(preds_on_preds)[:, -1], (1, 1, 5))
         ai_ans = normalize(ai_ans, convert_back=True)
 
-        # # Не забываем про остаточное обучение
-        # ai_ans = ai_ans + np.array(predicts_history[-1])
+        # Не забываем про остаточное обучение
+        ai_ans = ai_ans + np.array(predicts_history[-1])
 
         # Добавляем
         predicts_history.append(ai_ans.tolist()[0])
