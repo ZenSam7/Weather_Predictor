@@ -75,72 +75,6 @@ def clamp(num: float, minimum: float, maximum: float):
     return min(max(minimum, num), maximum)
 
 
-def normalize(x: np.ndarray, convert_back=False):
-    """Нормализуем данные от -1 до 1"""
-
-    if convert_back:
-        with open("Datasets/Info_About_Last_Dataset.txt", "r") as save:
-            save = save.read().split("\n")[:-1]
-
-            # Восстанавливаем каждое отдельно
-            joined_norm_data = (
-                None  # Надо начать с данных нужной архитектуры, чтобы объединить
-            )
-            for i in range(0, 10, 2):
-                buffer = x[:, :, int(i / 2)]
-
-                MIN_DATA = float(save[i][4:])
-                MAX_DATA = float(save[i + 1][4:])
-
-                result = (buffer + 1) / 2  # от 0 до 1
-                result = result * (MAX_DATA - MIN_DATA) + MIN_DATA
-
-                # Объединяем
-                if joined_norm_data is None:
-                    joined_norm_data = result
-                else:
-                    joined_norm_data = np.concatenate(
-                        (joined_norm_data, result), axis=1
-                    )
-
-        return joined_norm_data
-
-    # Сохраняем информацию о том, как потом нормализовать данные обратно
-    # (сохраняем по каждому параметру (температуру, влажность ...))
-    try:
-        os.remove("Datasets/Info_About_Last_Dataset.txt")
-    except:
-        pass
-    with open("Datasets/Info_About_Last_Dataset.txt", "w+") as save:
-        mins_list = np.min(x, axis=0).tolist()[0]
-        maxs_list = np.max(x, axis=0).tolist()[0]
-        for min, max in zip(mins_list, maxs_list):
-            save.write(f"MIN={min}\n" f"MAX={max}\n")
-
-    # Каждый компонент природы нормализуем отдельно
-    joined_norm_data = None  # Надо начать с данных нужной архитектуры, чтобы объединить
-    for ind in range(5):
-        buffer = x[:, :, ind]
-
-        # Сначала нормализуем от 0 до 1
-        result = buffer - np.min(buffer)
-        if np.max(result) != 0.0:
-            result = result / np.max(result)
-
-        # Потом от -1 до 1
-        result = result * 2 - 1
-
-        # Объединяем
-        if joined_norm_data is None:
-            joined_norm_data = result
-        else:
-            joined_norm_data = np.concatenate((joined_norm_data, result), axis=1)
-
-    joined_norm_data = np.reshape(joined_norm_data, (joined_norm_data.shape[0], 1, 5))
-
-    return joined_norm_data
-
-
 def conv_ai_ans_for_human(ai_answer: list):
     return [
         norm_temperature(ai_answer[0], True),
@@ -149,24 +83,6 @@ def conv_ai_ans_for_human(ai_answer: list):
         norm_cloud(ai_answer[3], True),
         ai_answer[4],
     ]
-
-
-def conv_rain_to_words(num: float):
-    word = ""
-
-    if abs(num) <= 0.1:
-        return "Clear"
-
-    word = "rain" if num > 0 else "snow"
-
-    if abs(num) <= 0.4:
-        word = "light " + word
-    elif 0.4 <= abs(num) <= 0.7:
-        word = word  # "moderate " + word
-    elif abs(num) >= 0.7:
-        word = "heavy " + word
-
-    return word.capitalize()
 
 
 def get_moscow_data():
@@ -183,7 +99,7 @@ def get_moscow_data():
     """
 
     DATA = []
-    with open(f"Datasets/Moscow_Weather.txt") as dataset:
+    with open(f"Moscow_Weather.txt") as dataset:
         # Без первой строки с начальным символом;
         # Без первой (идём от староого к новому) записи, т.к. она используется для смещения ответа
         # (т.е. чтобы мы на основе предыдущей записи создавали следующую)

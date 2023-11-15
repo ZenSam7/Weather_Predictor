@@ -13,16 +13,14 @@ from keras.layers import (
 )
 import keras
 from tqdm import tqdm
-from keras import Sequential
-from time import time
-import Weather_Data as wd
-import os
 import tensorflow as tf
 from logging import ERROR
+import Weather_Data as wd
 
 tf.data.experimental.enable_debug_mode()
 
 # Убираем предупреждения
+import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 tf.get_logger().setLevel(ERROR)
 
@@ -122,7 +120,6 @@ def ai_name(name):
             print()
 
 
-
 def show_architecture_ai(ai):
     from keras.utils.vis_utils import plot_model
 
@@ -144,10 +141,11 @@ def create_ai(
     # Т.к. одна нейросеть очень плохо предскаывает одновременно все факторы
     general_input = Input(batch_input_shape=(batch_size, 1, 8))
 
-    class Architecture:
-        def get_ai(self):
+    class Create_AI:
+        def get_model(self):
             num_conv_neurons = 4
-            list_layers = []
+            model = keras.Sequential()
+            model.add(general_input)
 
             # Добавляем Conv1D
             for _ in range(num_layers_conv):
@@ -156,20 +154,17 @@ def create_ai(
 
             # Добавляем основные слои (чередуем Dense и LSTM)
             for i in range(num_main_layers):
-                if i % 2 == 0:
-                    list_layers.append(Dense(num_neurons, activation="tanh"))
-                else:
-                    list_layers.append(
-                        LSTM(
-                            num_neurons,
-                            activation="tanh",
-                            return_sequences=True,
-                            unroll=False,
-                            stateful=True,
-                        )
+                list_layers.append(
+                    LSTM(
+                        num_neurons,
+                        activation="tanh",
+                        return_sequences=True,
+                        unroll=False,
+                        stateful=True,
                     )
+                )
 
-            return Sequential(list_layers)(general_input)
+            return keras.Sequential(list_layers)(general_input)
 
     # Создаём 5 полностью независимые нейронки
     temperature = Dense(1, activation="tanh", name="temp")(Architecture().get_ai())
