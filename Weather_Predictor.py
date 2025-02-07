@@ -17,7 +17,7 @@ import tensorflow as tf
 from logging import ERROR
 import Weather_Data as wd
 
-tf.data.experimental.enable_debug_mode()
+# tf.data.experimental.enable_debug_mode()
 
 # Убираем предупреждения
 import os
@@ -374,7 +374,7 @@ def start_train(
 
 if __name__ == "__main__":
     what_device_use("cpu")
-    ai_name("AI_v7.0")
+    ai_name("AI_v1.0")
     load_data("moscow")
 
     batch_size = 128

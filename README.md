@@ -1,2 +1,1 @@
-# Weather_Prophet
-AI Weather Prophet
+# Weather_Predictor
