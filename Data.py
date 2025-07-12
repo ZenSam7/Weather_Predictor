@@ -1,88 +1,100 @@
-from numpy import tanh, arctanh
-import numpy as np
-
-import time
-from time import time as Time
 import datetime as dt
-
-from urllib.request import urlretrieve
-import requests
-import json
 import gzip
-
 import os
+from urllib.request import urlretrieve
+
+import numpy as np
 
 np.set_printoptions(suppress=True)  # Убраем экспонинцеальную запись
 
 
-def norm_temperature(x: np.ndarray, convert_back=False):
-    """Нормализуем температуру от -1 до 1"""
-    if convert_back:
-        return round(arctanh(x) * 20, 1)
+class NormalizeData():
+    """ Данные:
+    0) Время: "11.07.2025  9:00:00"
+    1) Температура: ℃, от -33 до +38.5
+    2) Давление на уровне станции: мм.рт.ст., от 709.1 до 781.4
+    3) Влажность: %
+    4) Скорость ветра: м/с, от 0 до 15
+    5) Облачность: %, с шагом в 10%
+    6) Состояние погоды: буковы
+    7) Количество осадков: мм, от 0 до 65
+    8) Время за которое были осадки: ч, 1/2/6/18/24
+    """
 
-    return tanh(x / 20)
+    @staticmethod
+    def temperature(x: np.ndarray, convert_back=False):
+        """Нормализуем температуру от -1 до 1"""
+        if convert_back:
+            return ((x + 1) / 2) * (38.5 - -33) + -33
 
+        return ((x - -33) / (38.5 - -33)) * 2 - 1
 
-def norm_pressure(x: np.ndarray, convert_back=False):
-    """Нормализуем давление от -1 до 1"""
-    if convert_back:
-        return round(arctanh(x) * 20 + 750, 1)
+    @staticmethod
+    def pressure(x: np.ndarray, convert_back=False):
+        """Нормализуем давление от -1 до 1"""
+        if convert_back:
+            return ((x + 1) / 2) * (781.4 - 709.1) - 709.1
 
-    return tanh((x - 750) / 20)
+        return ((x - 709.1) / (781.4 - 709.1)) * 2 - 1
 
+    @staticmethod
+    def humidity(x: np.ndarray, convert_back=False):
+        """Нормализуем влажность от -1 до 1"""
+        if convert_back:
+            return int(x * 50 + 50)
 
-def norm_humidity(x: np.ndarray, convert_back=False):
-    """Нормализуем влажность от -1 до 1"""
-    if convert_back:
-        return int(x * 50 + 50)
+        return (x - 50) / 50
 
-    return (x - 50) / 50
+    @staticmethod
+    def cloud(x: np.ndarray, convert_back=False):
+        """Нормализуем облачность от -1 до 1"""
+        if convert_back:
+            return int(x * 50 + 50)
 
+        return (x - 50) / 50
 
-def norm_cloud(x: np.ndarray, convert_back=False):
-    """Нормализуем облачность от -1 до 1"""
-    if convert_back:
-        return int(x * 50 + 50)
+    @staticmethod
+    def rain(x: np.ndarray, convert_back=False):
+        """Нормализуем осадки от 0 до ∞"""
+        if convert_back:
+            return np.exp(x) - 1
 
-    return (x - 50) / 50
+        return np.log(x + 1)
 
+    @staticmethod
+    def time(x: np.ndarray):
+        """Нормализуем время от -1 до 1, в зависимости от того что это
+        (день/месяц/год), период разный:
+        час: 24, день: 31, месяц: 12, год не подаём"""
 
-def norm_hours(x: np.ndarray, convert_back=False):
-    """Нормализуем время суток от -1 до 1"""
-    if convert_back:
-        return int(x * 12 + 12)
+        radians = 2 * np.pi * x / period
+        return np.stack([np.sin(radians), np.cos(radians)], axis=-1)
 
-    return (x - 12) / 12
+    @staticmethod
+    def clamp(num: float, minimum: float, maximum: float):
+        """Ограничиваем сверху и снизу"""
+        return min(max(minimum, num), maximum)
 
-
-def norm_day(x: np.ndarray, convert_back=False):
-    """Нормализуем номер дня от -1 до 1"""
-    if convert_back:
-        return int(x * 15.5 + 15.5)
-
-    return (x - 15.5) / 15.5
-
-
-def norm_month(x: np.ndarray, convert_back=False):
-    """Нормализуем номер месяца от -1 до 1"""
-    if convert_back:
-        return int(x * 6 + 6)
-
-    return (x - 6) / 6
-
-
-def clamp(num: float, minimum: float, maximum: float):
-    return min(max(minimum, num), maximum)
-
-
-def conv_ai_ans_for_human(ai_answer: list):
-    return [
-        norm_temperature(ai_answer[0], True),
-        norm_pressure(ai_answer[1], True),
-        norm_humidity(ai_answer[2], True),
-        norm_cloud(ai_answer[3], True),
-        ai_answer[4],
-    ]
+    @staticmethod
+    def conv_ai_ans_for_human(ai_answer: list):
+        """
+        ai_answer = [
+            температура,
+            давление,
+            влажность,
+            облачность,
+            осадки должны быть,
+            количество осадков
+        ]
+        """
+        return [
+            NormalizateData.temperature(ai_answer[0], True),
+            NormalizateData.pressure(ai_answer[1], True),
+            NormalizateData.humidity(ai_answer[2], True),
+            NormalizateData.cloud(ai_answer[3], True),
+            NormalizateData.rain(ai_answer[4], True),
+            ai_answer[5] == True,
+        ]
 
 
 def get_moscow_data():

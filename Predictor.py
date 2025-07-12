@@ -15,7 +15,7 @@ import keras
 from tqdm import tqdm
 import tensorflow as tf
 from logging import ERROR
-import Weather_Data as wd
+import Data as wd
 
 # tf.data.experimental.enable_debug_mode()
 
