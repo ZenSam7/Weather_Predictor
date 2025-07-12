@@ -8,6 +8,7 @@
             <JupyterConnectionParameters>
               <option name="managed" value="true" />
               <option name="port" value="8888" />
+              <option name="sdkHomePath" value="C:\ProgramData\miniconda3\envs\main\python.exe" />
             </JupyterConnectionParameters>
           </value>
         </entry>
